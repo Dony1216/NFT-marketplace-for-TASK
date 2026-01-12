@@ -44,8 +44,17 @@ contract Marketplace {
         );
 
         // 3️⃣ Remove listing LAST
-        allListings[index] = allListings[allListings.length - 1];
+        uint lastIndex = allListings.length - 1;
+
+        allListings[index] = allListings[lastIndex];
+        listingIndex[
+            allListings[index].nft
+        ][
+            allListings[index].tokenId
+        ] = index;
+
         allListings.pop();
+
     }
 
 
@@ -59,8 +68,17 @@ contract Marketplace {
             item.tokenId
         );
 
-        allListings[index] = allListings[allListings.length - 1];
+        uint lastIndex = allListings.length - 1;
+
+        allListings[index] = allListings[lastIndex];
+        listingIndex[
+            allListings[index].nft
+        ][
+            allListings[index].tokenId
+        ] = index;
+
         allListings.pop();
+
     }
 
     function getAllListings() external view returns (Listing[] memory) {
