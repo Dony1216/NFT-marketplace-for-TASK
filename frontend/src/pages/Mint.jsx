@@ -11,7 +11,7 @@ export default function Mint() {
 
   try {
     const { nft } = await getContracts();
-    const tx = await nft.mint(uri);
+    const tx = await nft.mint(`ipfs://${uri}`);
     await tx.wait();
     alert("NFT Minted!");
   } catch (err) {
