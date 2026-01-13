@@ -1,0 +1,20 @@
+.nft-list {
+  display: flex;
+  gap: 20px;
+  overflow-x: auto;
+  padding-bottom: 10px;
+  scroll-behavior: smooth;
+}
+
+.nft-list::-webkit-scrollbar {
+  height: 8px;
+}
+
+.nft-list::-webkit-scrollbar-thumb {
+  background-color: #4b7bec;
+  border-radius: 4px;
+}
+
+.nft-list::-webkit-scrollbar-track {
+  background-color: #f0f2f5;
+}
