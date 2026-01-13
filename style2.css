@@ -1,10 +1,4 @@
-.nft-list {
-  display: flex;
-  gap: 20px;
-  overflow-x: auto;
-  padding-bottom: 10px;
-  scroll-behavior: smooth;
-}
+
 
 .nft-list::-webkit-scrollbar {
   height: 8px;
