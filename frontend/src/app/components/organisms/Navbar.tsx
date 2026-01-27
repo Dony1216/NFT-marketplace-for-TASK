@@ -1,22 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Sparkles, Wallet } from 'lucide-react';
-import { Button } from '@/app/components/atoms/Button';
-import { formatAddress } from '@/app/utils/formatters';
+import { Button } from '../atoms/Button';
+import { formatAddress } from '../../utils/formatters';
+import { useConnect, useAccount, useDisconnect } from "wagmi"
 
-interface NavbarProps {
-  walletAddress: string | null;
-  onConnectWallet: () => void;
-  onDisconnectWallet: () => void;
-}
 
-export const Navbar: React.FC<NavbarProps> = ({ 
-  walletAddress, 
-  onConnectWallet,
-  onDisconnectWallet
-}) => {
+export const Navbar: React.FC = () => {
   const [scrolled, setScrolled] = useState(false);
   const location = useLocation();
+  const { connect, connectors } = useConnect()
+  const { address, isConnected } = useAccount()
+  const { disconnect } = useDisconnect()
+
+  const injectedWallet = connectors.find(c => c.id === 'injected')
 
   useEffect(() => {
     const handleScroll = () => {
@@ -39,11 +36,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   const isActive = (path: string) => location.pathname === path;
 
   return (
-    <nav 
+    <nav
       className={`
         fixed top-0 left-0 right-0 z-50 transition-all duration-300
-        ${scrolled 
-          ? 'py-3 backdrop-blur-xl bg-black/40 border-b border-purple-500/20 shadow-[0_8px_32px_rgba(139,92,246,0.15)]' 
+        ${scrolled
+          ? 'py-3 backdrop-blur-xl bg-black/40 border-b border-purple-500/20 shadow-[0_8px_32px_rgba(139,92,246,0.15)]'
           : 'py-5 bg-transparent'
         }
       `}
@@ -51,8 +48,8 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="container mx-auto px-6">
         <div className="flex items-center justify-between">
           {/* Logo */}
-          <Link 
-            to="/" 
+          <Link
+            to="/"
             className="flex items-center gap-2 group cursor-pointer"
           >
             <div className="relative">
@@ -67,8 +64,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Navigation Links */}
           <div className="hidden md:flex items-center gap-8">
             {navLinks.map((link) => {
-              const canAccess = !link.requiresWallet || walletAddress;
-              
+              const canAccess = !link.requiresWallet || isConnected;
+
               return (
                 <Link
                   key={link.path}
@@ -77,7 +74,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     relative text-sm transition-all duration-300
                     ${isActive(link.path)
                       ? 'text-purple-400'
-                      : canAccess 
+                      : canAccess
                         ? 'text-gray-300 hover:text-white'
                         : 'text-gray-600 cursor-not-allowed'
                     }
@@ -99,17 +96,18 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Wallet Connection */}
           <div className="flex items-center gap-4">
-            {walletAddress ? (
+            {isConnected && address ? (
               <div className="flex items-center gap-3">
                 <div className="px-4 py-2 rounded-lg bg-purple-500/10 border border-purple-500/30 backdrop-blur-sm">
                   <span className="text-sm text-purple-300">
-                    {formatAddress(walletAddress)}
+                    {formatAddress(address)}
                   </span>
                 </div>
+
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={onDisconnectWallet}
+                  onClick={() => disconnect()}
                 >
                   Disconnect
                 </Button>
@@ -118,13 +116,14 @@ export const Navbar: React.FC<NavbarProps> = ({
               <Button
                 variant="primary"
                 size="sm"
-                onClick={onConnectWallet}
+                onClick={() => connect({ connector: injectedWallet })}
               >
                 <Wallet className="w-4 h-4" />
                 Connect Wallet
               </Button>
             )}
           </div>
+
         </div>
       </div>
     </nav>

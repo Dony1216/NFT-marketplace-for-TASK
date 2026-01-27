@@ -1,26 +1,110 @@
-import React, { useState, useRef } from 'react';
-import { Button } from '@/app/components/atoms/Button';
-import { Input } from '@/app/components/atoms/Input';
-import { Badge } from '@/app/components/atoms/Badge';
-import { Upload, CheckCircle2, Image as ImageIcon, Loader2 } from 'lucide-react';
+import React, { useState, useRef, useEffect } from "react";
+import { ethers } from "ethers";
+import { motion } from "framer-motion";
+import { Button } from "../components/atoms/Button";
+import { Input } from "../components/atoms/Input";
+import { Badge } from "../components/atoms/Badge";
+import { Upload, CheckCircle2, Loader2 } from "lucide-react";
+import { uploadFileToIPFS, uploadMetadata } from "../../pinata";
+import { getNFTContract } from "../../web3";
+import { useNFTs } from "../../context/NFTContext";
 
-type Step = 'upload' | 'preview' | 'mint';
+
+type Step = "upload" | "preview" | "mint";
 
 export const CreateNFTPage: React.FC = () => {
-  const [currentStep, setCurrentStep] = useState<Step>('upload');
-  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const { addNFT } = useNFTs();
+  const [currentStep, setCurrentStep] = useState<Step>("upload");
+  const [uploadedImage, setUploadedImage] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [isMinting, setIsMinting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    price: '',
-    blockchain: 'ethereum' as 'ethereum' | 'polygon' | 'solana',
-    category: 'Art',
-    royalties: '10',
+    title: "",
+    description: "",
+    price: "",
+    blockchain: "ethereum" as "ethereum" | "polygon" | "solana",
+    category: "Art",
+    royalties: "10",
   });
+
+  // Logic from file2
+  const [loading, setLoading] = useState(false);
+  const [canMint, setCanMint] = useState(true);
+  const [cooldownLeft, setCooldownLeft] = useState(0);
+  const [gasCost, setGasCost] = useState<number | string | null>(null);
+  const [totalCost, setTotalCost] = useState<number | string | null>(null);
+  const MINT_FEE = 0.01;
+
+  const blockchainOptions = [
+    { value: "ethereum", label: "Ethereum", color: "purple" },
+    { value: "polygon", label: "Polygon", color: "cyan" },
+    { value: "solana", label: "Solana", color: "success" },
+  ] as const;
+
+  const categories = ["Art", "Gaming", "Photography", "Music", "Virtual Worlds", "Collectibles"];
+
+  const steps = [
+    { id: "upload", label: "Upload", number: 1 },
+    { id: "preview", label: "Preview", number: 2 },
+    { id: "mint", label: "Mint", number: 3 },
+  ];
+
+  /* ---------------- COOLDOWN ---------------- */
+
+  async function checkCooldown() {
+    try {
+      if (!window.ethereum) return;
+
+      const nft = await getNFTContract();
+      const [account] = await window.ethereum.request({
+        method: "eth_requestAccounts",
+      });
+
+      const lastMint = await nft.lastMintTime(account);
+      const cooldown = await nft.mintCooldown();
+      const now = Math.floor(Date.now() / 1000);
+      const end = Number(lastMint) + Number(cooldown);
+
+      if (now >= end) {
+        setCanMint(true);
+        setCooldownLeft(0);
+      } else {
+        setCanMint(false);
+        setCooldownLeft(end - now);
+      }
+    } catch (err) {
+      console.error("Cooldown check failed", err);
+    }
+  }
+
+  useEffect(() => {
+    checkCooldown();
+  }, []);
+
+  useEffect(() => {
+    if (cooldownLeft <= 0) return;
+    const timer = setInterval(() => {
+      setCooldownLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          setCanMint(true);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [cooldownLeft]);
+
+  function formatTime(sec: number) {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  }
+
+  /* ---------------- IMAGE HANDLING ---------------- */
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -35,50 +119,123 @@ export const CreateNFTPage: React.FC = () => {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    
     const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith('image/')) {
-      handleImageUpload(file);
+    if (file && file.type.startsWith("image/")) {
+      setUploadedImage(file);
+      setCurrentStep("preview");
     }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      handleImageUpload(file);
+      setUploadedImage(file);
+      setCurrentStep("preview");
     }
   };
 
-  const handleImageUpload = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setUploadedImage(e.target?.result as string);
-      setCurrentStep('preview');
-    };
-    reader.readAsDataURL(file);
-  };
+  /* ---------------- GAS ESTIMATION ---------------- */
 
-  const handleMint = async () => {
-    setIsMinting(true);
-    // Simulate minting process
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    setIsMinting(false);
-    setCurrentStep('mint');
-  };
+  async function estimateMintGas(metadataUrl: string) {
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const nft = await getNFTContract(true);
+      const gasLimit = await nft.mint.estimateGas(metadataUrl, {
+        value: ethers.parseEther(MINT_FEE.toString()),
+      });
+      const feeData = await provider.getFeeData();
+      const gasPrice = feeData.gasPrice ?? feeData.maxFeePerGas ?? ethers.parseUnits("1", "gwei");
+      const gasEth = ethers.formatEther(gasLimit * gasPrice);
+      setGasCost(Number(gasEth).toFixed(6));
+      setTotalCost((Number(gasEth) + MINT_FEE).toFixed(6));
+    } catch (err) {
+      console.error("Gas estimation failed", err);
+      setGasCost("—");
+      setTotalCost("—");
+    }
+  }
 
-  const blockchainOptions = [
-    { value: 'ethereum', label: 'Ethereum', color: 'purple' },
-    { value: 'polygon', label: 'Polygon', color: 'cyan' },
-    { value: 'solana', label: 'Solana', color: 'success' },
-  ] as const;
+  /* ---------------- CREATE NFT ---------------- */
 
-  const categories = ['Art', 'Gaming', 'Photography', 'Music', 'Virtual Worlds', 'Collectibles'];
+  async function createNFT() {
+    if (!canMint) {
+      alert(`⏳ Cooldown active. Please wait ${formatTime(cooldownLeft)}.`);
+      return;
+    }
 
-  const steps = [
-    { id: 'upload', label: 'Upload', number: 1 },
-    { id: 'preview', label: 'Preview', number: 2 },
-    { id: 'mint', label: 'Mint', number: 3 },
-  ];
+    if (!uploadedImage || !formData.title || !formData.description || !formData.category) {
+      alert("Please fill all required fields");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      // Upload image
+      const imageUrl = await uploadFileToIPFS(uploadedImage);
+
+      // Upload metadata
+      const metadataUrl = await uploadMetadata(
+        formData.title,
+        formData.description,
+        imageUrl,
+        formData.category
+      );
+
+      // Estimate gas
+      await estimateMintGas(metadataUrl);
+
+      // Mint
+      const nft = await getNFTContract(true);
+      const tx = await nft.mint(metadataUrl, {
+        value: ethers.parseEther(MINT_FEE.toString()),
+      });
+const receipt = await tx.wait();
+
+// get wallet address
+const provider = new ethers.BrowserProvider(window.ethereum);
+const signer = await provider.getSigner();
+const userAddress = await signer.getAddress();
+
+// create frontend NFT object
+addNFT({
+  id: `${Date.now()}`, // frontend-safe unique id
+  title: formData.title,
+  description: formData.description,
+  image: imageUrl,
+  price: Number(formData.price) || 0,
+  blockchain: formData.blockchain,
+  likes: 0,
+  creator: {
+    name: "You",
+    avatar: "/avatar.png",
+    verified: false,
+    address: userAddress,
+  },
+});
+console.log(addNFT);
+      alert("✅ NFT created successfully!");
+      setCurrentStep("mint");
+      await checkCooldown();
+    } catch (err: any) {
+      console.error(err);
+      let message = err?.reason || err?.data?.message || err.message;
+      if (message?.includes("cooldown")) {
+        alert("⏳ Please wait before minting again.");
+      } else if (message?.includes("Mint fee")) {
+        alert("💰 Not enough ETH to mint.");
+      } else if (message?.includes("user rejected")) {
+        alert("❌ Transaction cancelled.");
+      } else {
+        alert("⚠️ " + message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  /* ---------------- RENDER ---------------- */
 
   return (
     <div className="min-h-screen pt-24 pb-20">
@@ -98,31 +255,37 @@ export const CreateNFTPage: React.FC = () => {
           {steps.map((step, index) => (
             <React.Fragment key={step.id}>
               <div className="flex flex-col items-center">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${
-                  currentStep === step.id
-                    ? 'bg-purple-500 border-purple-500 text-white'
-                    : steps.findIndex(s => s.id === currentStep) > index
-                    ? 'bg-purple-500/20 border-purple-500 text-purple-400'
-                    : 'bg-white/5 border-purple-500/20 text-muted-foreground'
-                }`}>
-                  {steps.findIndex(s => s.id === currentStep) > index ? (
+                <div
+                  className={`w-12 h-12 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${
+                    currentStep === step.id
+                      ? "bg-purple-500 border-purple-500 text-white"
+                      : steps.findIndex((s) => s.id === currentStep) > index
+                      ? "bg-purple-500/20 border-purple-500 text-purple-400"
+                      : "bg-white/5 border-purple-500/20 text-muted-foreground"
+                  }`}
+                >
+                  {steps.findIndex((s) => s.id === currentStep) > index ? (
                     <CheckCircle2 className="w-6 h-6" />
                   ) : (
                     <span className="font-bold">{step.number}</span>
                   )}
                 </div>
-                <span className={`text-sm mt-2 ${
-                  currentStep === step.id ? 'text-purple-400' : 'text-muted-foreground'
-                }`}>
+                <span
+                  className={`text-sm mt-2 ${
+                    currentStep === step.id ? "text-purple-400" : "text-muted-foreground"
+                  }`}
+                >
                   {step.label}
                 </span>
               </div>
               {index < steps.length - 1 && (
-                <div className={`w-24 h-0.5 mx-4 mb-6 transition-all duration-300 ${
-                  steps.findIndex(s => s.id === currentStep) > index
-                    ? 'bg-purple-500'
-                    : 'bg-purple-500/20'
-                }`} />
+                <div
+                  className={`w-24 h-0.5 mx-4 mb-6 transition-all duration-300 ${
+                    steps.findIndex((s) => s.id === currentStep) > index
+                      ? "bg-purple-500"
+                      : "bg-purple-500/20"
+                  }`}
+                />
               )}
             </React.Fragment>
           ))}
@@ -131,7 +294,7 @@ export const CreateNFTPage: React.FC = () => {
         {/* Content */}
         <div className="max-w-4xl mx-auto">
           {/* Step 1: Upload */}
-          {currentStep === 'upload' && (
+          {currentStep === "upload" && (
             <div className="space-y-8">
               <div
                 onDragOver={handleDragOver}
@@ -140,8 +303,8 @@ export const CreateNFTPage: React.FC = () => {
                 onClick={() => fileInputRef.current?.click()}
                 className={`relative p-12 rounded-2xl border-2 border-dashed transition-all duration-300 cursor-pointer ${
                   isDragging
-                    ? 'border-purple-500 bg-purple-500/10'
-                    : 'border-purple-500/30 bg-gradient-to-br from-white/5 to-white/[0.02] hover:border-purple-500/50 hover:bg-purple-500/5'
+                    ? "border-purple-500 bg-purple-500/10"
+                    : "border-purple-500/30 bg-gradient-to-br from-white/5 to-white/[0.02] hover:border-purple-500/50 hover:bg-purple-500/5"
                 }`}
               >
                 <input
@@ -151,7 +314,6 @@ export const CreateNFTPage: React.FC = () => {
                   onChange={handleFileSelect}
                   className="hidden"
                 />
-                
                 <div className="text-center">
                   <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-purple-500/10 flex items-center justify-center">
                     <Upload className="w-10 h-10 text-purple-400" />
@@ -165,43 +327,35 @@ export const CreateNFTPage: React.FC = () => {
                   </p>
                 </div>
               </div>
-
-              <div className="text-center">
-                <p className="text-muted-foreground">
-                  By uploading, you confirm that you own the rights to this artwork
-                </p>
-              </div>
             </div>
           )}
 
-          {/* Step 2: Preview & Details */}
-          {currentStep === 'preview' && uploadedImage && (
+          {/* Step 2: Preview */}
+          {currentStep === "preview" && uploadedImage && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Left: Preview Card */}
+              {/* Left: Preview */}
               <div>
                 <h3 className="text-xl font-semibold mb-4">Live Preview</h3>
                 <div className="rounded-2xl overflow-hidden bg-gradient-to-br from-white/5 to-white/[0.02] backdrop-blur-sm border border-purple-500/20">
-                  <img 
-                    src={uploadedImage} 
+                  <img
+                    src={URL.createObjectURL(uploadedImage)}
                     alt="NFT Preview"
                     className="w-full aspect-square object-cover"
                   />
                   <div className="p-4">
-                    <h4 className="text-lg font-semibold mb-2">
-                      {formData.title || 'Untitled NFT'}
-                    </h4>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      {formData.description || 'No description'}
-                    </p>
+                    <h4 className="text-lg font-semibold mb-2">{formData.title || "Untitled NFT"}</h4>
+                    <p className="text-sm text-muted-foreground mb-4">{formData.description || "No description"}</p>
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-xs text-muted-foreground mb-1">Price</p>
-                        <p className="text-xl font-bold">
-                          {formData.price || '0'} <span className="text-sm text-purple-400">ETH</span>
-                        </p>
+                        <p className="text-xl font-bold">{formData.price || "0"} ETH</p>
                       </div>
-                      <Badge variant={blockchainOptions.find(b => b.value === formData.blockchain)?.color || 'purple'}>
-                        {blockchainOptions.find(b => b.value === formData.blockchain)?.label}
+                      <Badge
+                        variant={
+                          blockchainOptions.find((b) => b.value === formData.blockchain)?.color || "purple"
+                        }
+                      >
+                        {blockchainOptions.find((b) => b.value === formData.blockchain)?.label}
                       </Badge>
                     </div>
                   </div>
@@ -209,106 +363,58 @@ export const CreateNFTPage: React.FC = () => {
               </div>
 
               {/* Right: Form */}
-              <div>
-                <h3 className="text-xl font-semibold mb-4">NFT Details</h3>
-                <div className="space-y-4">
-                  <Input
-                    label="Title *"
-                    placeholder="Enter NFT title"
-                    value={formData.title}
-                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  />
+              <div className="space-y-4">
+                <Input
+                  label="Title *"
+                  placeholder="Enter NFT title"
+                  value={formData.title}
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                />
+                <textarea
+                  className="w-full p-4 rounded-lg bg-white/5 border border-purple-500/20 text-foreground placeholder:text-muted-foreground focus:outline-none"
+                  placeholder="Description"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                />
+                <select
+                  value={formData.category}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  className="w-full p-3 rounded-lg bg-white/5 border border-purple-500/20 text-foreground"
+                >
+                  {categories.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
 
-                  <div className="flex flex-col gap-2">
-                    <label className="text-sm text-muted-foreground">Description</label>
-                    <textarea
-                      placeholder="Describe your NFT..."
-                      value={formData.description}
-                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                      rows={4}
-                      className="w-full px-4 py-3 rounded-lg bg-white/5 border border-purple-500/20 text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all duration-200 resize-none"
-                    />
-                  </div>
+                {/* Gas + cooldown info */}
+                <div className="bg-slate-900/70 backdrop-blur-md p-4 rounded-xl text-sm text-gray-400 mb-4">
+                  <p>💰 Mint fee: <b>{MINT_FEE} ETH</b></p>
+                  <p>⏳ Cooldown: <b>5 minutes</b></p>
+                  <p>⛽ Gas: <b>{gasCost ?? "—"} ETH</b></p>
+                  <p>🧮 Total: <b>{totalCost ?? "—"} ETH</b></p>
+                </div>
 
-                  <Input
-                    label="Price (ETH) *"
-                    type="number"
-                    placeholder="0.00"
-                    value={formData.price}
-                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                  />
-
-                  <div className="flex flex-col gap-2">
-                    <label className="text-sm text-muted-foreground">Blockchain *</label>
-                    <div className="grid grid-cols-3 gap-3">
-                      {blockchainOptions.map((option) => (
-                        <button
-                          key={option.value}
-                          onClick={() => setFormData({ ...formData, blockchain: option.value })}
-                          className={`p-3 rounded-lg border transition-all duration-200 ${
-                            formData.blockchain === option.value
-                              ? 'bg-purple-500/20 border-purple-500/40 text-purple-300'
-                              : 'bg-white/5 border-purple-500/20 text-muted-foreground hover:border-purple-500/30'
-                          }`}
-                        >
-                          {option.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-2">
-                    <label className="text-sm text-muted-foreground">Category</label>
-                    <select
-                      value={formData.category}
-                      onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                      className="px-4 py-3 rounded-lg bg-white/5 border border-purple-500/20 text-foreground focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all duration-200"
-                    >
-                      {categories.map((category) => (
-                        <option key={category} value={category}>{category}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <Input
-                    label="Royalties (%)"
-                    type="number"
-                    placeholder="10"
-                    value={formData.royalties}
-                    onChange={(e) => setFormData({ ...formData, royalties: e.target.value })}
-                  />
-
-                  <div className="flex gap-3 pt-4">
-                    <Button
-                      variant="ghost"
-                      onClick={() => setCurrentStep('upload')}
-                      className="flex-1"
-                    >
-                      Back
-                    </Button>
-                    <Button
-                      variant="primary"
-                      onClick={handleMint}
-                      disabled={!formData.title || !formData.price || isMinting}
-                      className="flex-1"
-                    >
-                      {isMinting ? (
-                        <>
-                          <Loader2 className="w-5 h-5 animate-spin" />
-                          Minting...
-                        </>
-                      ) : (
-                        'Mint NFT'
-                      )}
-                    </Button>
-                  </div>
+                <div className="flex gap-3 pt-4">
+                  <Button variant="ghost" onClick={() => setCurrentStep("upload")} className="flex-1">
+                    Back
+                  </Button>
+                  <Button
+                    variant="primary"
+                    onClick={createNFT}
+                    disabled={loading || !canMint || !formData.title}
+                    className="flex-1"
+                  >
+                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Mint NFT"}
+                  </Button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Step 3: Success */}
-          {currentStep === 'mint' && (
+          {/* Step 3: Mint success */}
+          {currentStep === "mint" && (
             <div className="text-center py-12">
               <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-gradient-to-br from-purple-500 to-cyan-500 flex items-center justify-center">
                 <CheckCircle2 className="w-12 h-12 text-white" />
@@ -318,44 +424,9 @@ export const CreateNFTPage: React.FC = () => {
                   NFT Minted Successfully!
                 </span>
               </h2>
-              <p className="text-muted-foreground text-lg mb-8">
-                Your NFT has been created and is now live on the blockchain
-              </p>
-              
-              {uploadedImage && (
-                <div className="max-w-sm mx-auto mb-8">
-                  <div className="rounded-2xl overflow-hidden bg-gradient-to-br from-white/5 to-white/[0.02] backdrop-blur-sm border border-purple-500/20">
-                    <img 
-                      src={uploadedImage} 
-                      alt="Minted NFT"
-                      className="w-full aspect-square object-cover"
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="flex flex-wrap gap-4 justify-center">
-                <Button variant="primary" onClick={() => window.location.href = '/my-nfts'}>
-                  View My NFTs
-                </Button>
-                <Button 
-                  variant="outline" 
-                  onClick={() => {
-                    setCurrentStep('upload');
-                    setUploadedImage(null);
-                    setFormData({
-                      title: '',
-                      description: '',
-                      price: '',
-                      blockchain: 'ethereum',
-                      category: 'Art',
-                      royalties: '10',
-                    });
-                  }}
-                >
-                  Create Another
-                </Button>
-              </div>
+              <Button variant="primary" onClick={() => window.location.href = "/my-nfts"}>
+                View My NFTs
+              </Button>
             </div>
           )}
         </div>

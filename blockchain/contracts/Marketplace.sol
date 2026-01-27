@@ -3,6 +3,13 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
+interface IERC2981 {
+    function royaltyInfo(
+        uint256 tokenId,
+        uint256 salePrice
+    ) external view returns (address receiver, uint256 royaltyAmount);
+}
+
 contract Marketplace {
     struct Listing {
         address seller;
@@ -31,14 +38,19 @@ contract Marketplace {
         bool ended;
     }
 
-    // For Auction
+    // ================= AUCTIONS =================
     uint256 public auctionCount;
     mapping(uint256 => Auction) public auctions;
 
-    // For Sold History
+    // ================= SALES HISTORY =================
     Sale[] public sales;
     mapping(address => mapping(uint256 => bool)) public wasSold;
 
+    // ================= LISTINGS =================
+    Listing[] public allListings;
+    mapping(address => mapping(uint256 => uint256)) public listingIndex;
+
+    // ================= EVENTS =================
     event ItemListed(
         uint256 indexed listingId,
         address indexed seller,
@@ -48,12 +60,30 @@ contract Marketplace {
     );
 
     event ItemSold(uint256 indexed listingId, address buyer);
-
     event ListingCancelled(uint256 indexed listingId);
 
-    Listing[] public allListings;
-    mapping(address => mapping(uint256 => uint256)) public listingIndex;
+    // ================= INTERNAL: ROYALTY PAYOUT =================
+    function _handleRoyalty(
+        address nft,
+        uint256 tokenId,
+        uint256 salePrice,
+        address seller
+    ) internal {
+        try IERC2981(nft).royaltyInfo(tokenId, salePrice)
+            returns (address receiver, uint256 royaltyAmount)
+        {
+            if (receiver != address(0) && royaltyAmount > 0) {
+                payable(receiver).transfer(royaltyAmount);
+                payable(seller).transfer(salePrice - royaltyAmount);
+                return;
+            }
+        } catch {}
 
+        // Fallback: no royalties
+        payable(seller).transfer(salePrice);
+    }
+
+    // ================= LIST ITEM =================
     function listItem(address nft, uint256 tokenId, uint256 price) external {
         require(price > 0, "Price must be > 0");
 
@@ -67,17 +97,24 @@ contract Marketplace {
         emit ItemListed(index, msg.sender, nft, tokenId, price);
     }
 
+    // ================= BUY ITEM (ROYALTY AWARE) =================
     function buyItem(uint256 index) external payable {
         Listing memory item = allListings[index];
-
         require(msg.value == item.price, "Wrong ETH");
 
-        (bool success, ) = payable(item.seller).call{value: msg.value}("");
-        require(success, "ETH transfer failed");
+        _handleRoyalty(
+            item.nft,
+            item.tokenId,
+            item.price,
+            item.seller
+        );
 
-        IERC721(item.nft).transferFrom(address(this), msg.sender, item.tokenId);
+        IERC721(item.nft).transferFrom(
+            address(this),
+            msg.sender,
+            item.tokenId
+        );
 
-        // ✅ STORE SALE
         sales.push(
             Sale(
                 item.seller,
@@ -88,11 +125,10 @@ contract Marketplace {
                 block.timestamp
             )
         );
-        //For Sold badges
+
         wasSold[item.nft][item.tokenId] = true;
 
         uint256 last = allListings.length - 1;
-
         if (index != last) {
             Listing memory lastItem = allListings[last];
             allListings[index] = lastItem;
@@ -105,6 +141,7 @@ contract Marketplace {
         emit ItemSold(index, msg.sender);
     }
 
+    // ================= CANCEL LISTING =================
     function cancelListing(uint256 index) external {
         Listing memory item = allListings[index];
         require(item.seller == msg.sender, "Not seller");
@@ -116,7 +153,6 @@ contract Marketplace {
         );
 
         uint256 last = allListings.length - 1;
-
         if (index != last) {
             Listing memory lastItem = allListings[last];
             allListings[index] = lastItem;
@@ -129,6 +165,7 @@ contract Marketplace {
         emit ListingCancelled(index);
     }
 
+    // ================= UPDATE PRICE =================
     function updatePrice(uint256 index, uint256 newPrice) external {
         require(newPrice > 0, "Price must be > 0");
         require(index < allListings.length, "Invalid index");
@@ -139,6 +176,7 @@ contract Marketplace {
         item.price = newPrice;
     }
 
+    // ================= VIEW HELPERS =================
     function getAllListings() external view returns (Listing[] memory) {
         return allListings;
     }
@@ -151,7 +189,7 @@ contract Marketplace {
         return wasSold[nft][tokenId];
     }
 
-    // Auction Create
+    // ================= AUCTIONS =================
     function createAuction(
         address nft,
         uint256 tokenId,
@@ -177,16 +215,15 @@ contract Marketplace {
     function bid(uint256 auctionId) external payable {
         Auction storage a = auctions[auctionId];
 
-        require(block.timestamp < a.endTime, "Auction ended"); //Timeout
+        require(block.timestamp < a.endTime, "Auction ended");
         require(!a.ended, "Auction closed");
 
         uint256 minBid = a.highestBid == 0
             ? a.startPrice
-            : a.highestBid + (a.highestBid / 10); //10% increment
+            : a.highestBid + (a.highestBid / 10);
 
         require(msg.value >= minBid, "Bid too low");
 
-        //Refund previous bidder
         if (a.highestBidder != address(0)) {
             payable(a.highestBidder).transfer(a.highestBid);
         }
@@ -204,20 +241,32 @@ contract Marketplace {
         a.ended = true;
 
         if (a.highestBidder != address(0)) {
+            _handleRoyalty(
+                a.nft,
+                a.tokenId,
+                a.highestBid,
+                a.seller
+            );
+
             IERC721(a.nft).transferFrom(
                 address(this),
                 a.highestBidder,
                 a.tokenId
             );
-            payable(a.seller).transfer(a.highestBid);
         } else {
-            // No bids → return NFT
-            IERC721(a.nft).transferFrom(address(this), a.seller, a.tokenId);
+            IERC721(a.nft).transferFrom(
+                address(this),
+                a.seller,
+                a.tokenId
+            );
         }
     }
 
-    function getAuction(uint256 auctionId) external view returns (Auction memory) {
+    function getAuction(uint256 auctionId)
+        external
+        view
+        returns (Auction memory)
+    {
         return auctions[auctionId];
     }
-
 }

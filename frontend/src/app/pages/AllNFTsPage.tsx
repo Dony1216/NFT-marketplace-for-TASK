@@ -1,32 +1,112 @@
-import React, { useState } from 'react';
-import { NFTCard } from '@/app/components/organisms/NFTCard';
-import { SearchBar } from '@/app/components/molecules/SearchBar';
-import { mockNFTs } from '@/app/utils/mockData';
-import { ChevronDown, Grid3x3, LayoutGrid } from 'lucide-react';
+// src/app/pages/AllNFTsPage.tsx
+import React, { useEffect, useState } from "react";
+import { NFTCard } from "../components/organisms/NFTCard";
+import { SearchBar } from "../components/molecules/SearchBar";
+import { ChevronDown, Grid3x3, LayoutGrid } from "lucide-react";
+import { getNFTContract } from "../../web3";
+
+interface NFT {
+  id: string;
+  title: string;
+  description: string;
+  image: string;
+  price: number;
+  blockchain: "ethereum";
+  likes: number;
+  creator: {
+    name: string;
+    avatar: string;
+    verified: boolean;
+    address?: string;
+  };
+}
 
 export const AllNFTsPage: React.FC = () => {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<'recent' | 'price-low' | 'price-high' | 'popular'>('recent');
+  const [nfts, setNFTs] = useState<NFT[]>([]);
+  const [loading, setLoading] = useState(false);
+  
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<
+    "recent" | "price-low" | "price-high" | "popular"
+  >("recent");
   const [gridCols, setGridCols] = useState<3 | 4>(4);
 
-  // Filter and sort NFTs
-  const filteredNFTs = mockNFTs
-    .filter(nft => 
-      nft.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      nft.creator.name.toLowerCase().includes(searchQuery.toLowerCase())
+  /* ---------------- FETCH ALL NFTs FROM CHAIN ---------------- */
+
+  const fetchAllNFTs = async () => {
+    if (!window.ethereum) return;
+    setLoading(true);
+
+    try {
+      const nftContract = await getNFTContract();
+      const totalSupply = Number(await nftContract.tokenCount());
+
+      const items: NFT[] = [];
+
+      for (let tokenId = 1; tokenId <= totalSupply; tokenId++) {
+        try {
+          const tokenURI = await nftContract.tokenURI(tokenId);
+          const owner = await nftContract.ownerOf(tokenId);
+
+          const res = await fetch(tokenURI);
+          const metadata = await res.json();
+
+          items.push({
+            id: tokenId.toString(),
+            title: metadata.name ?? "Untitled NFT",
+            description: metadata.description ?? "",
+            image: metadata.image,
+            owner,
+            price: metadata.price ?? 0,
+            blockchain: "ethereum",
+            likes: 0,
+            creator: {
+              name: metadata.creatorName ?? "Unknown",
+              avatar: "/avatar.png",
+              verified: false,
+              address: metadata.creator ?? owner,
+            },
+          });
+        } catch (err) {
+          console.warn(`Failed to load NFT #${tokenId}`, err);
+        }
+      }
+
+      setNFTs(items.reverse()); // newest first
+    } catch (err) {
+      console.error("Failed to fetch NFTs", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAllNFTs();
+  }, []);
+
+  /* ---------------- FILTER + SORT ---------------- */
+
+  const filteredNFTs = nfts
+    .filter(
+      (nft) =>
+        nft.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        nft.creator.name.toLowerCase().includes(searchQuery.toLowerCase())
     )
     .sort((a, b) => {
       switch (sortBy) {
-        case 'price-low':
-          return (a.highestBid || a.price) - (b.highestBid || b.price);
-        case 'price-high':
-          return (b.highestBid || b.price) - (a.highestBid || a.price);
-        case 'popular':
+        case "price-low":
+          return a.price - b.price;
+        case "price-high":
+          return b.price - a.price;
+        case "popular":
           return b.likes - a.likes;
         default:
           return 0;
       }
     });
+
+  /* ---------------- RENDER ---------------- */
 
   return (
     <div className="min-h-screen pt-24 pb-20">
@@ -37,53 +117,53 @@ export const AllNFTsPage: React.FC = () => {
             All NFTs
           </h1>
           <p className="text-muted-foreground text-lg">
-            Browse our complete collection of {mockNFTs.length} unique digital assets
+            Browse {filteredNFTs.length} unique digital assets
           </p>
         </div>
 
         {/* Filter Bar */}
         <div className="mb-8 p-6 rounded-2xl bg-gradient-to-br from-white/5 to-white/[0.02] backdrop-blur-sm border border-purple-500/20">
           <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-            <SearchBar 
-              value={searchQuery} 
+            <SearchBar
+              value={searchQuery}
               onChange={setSearchQuery}
               placeholder="Search by name or creator..."
             />
-            
+
             <div className="flex gap-4 items-center">
-              {/* Sort Dropdown */}
+              {/* Sort */}
               <div className="relative">
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value as any)}
-                  className="appearance-none px-4 py-3 pr-10 rounded-lg bg-white/5 border border-purple-500/20 text-foreground focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all duration-200 cursor-pointer"
+                  className="appearance-none px-4 py-3 pr-10 rounded-lg bg-white/5 border border-purple-500/20"
                 >
                   <option value="recent">Most Recent</option>
-                  <option value="price-low">Price: Low to High</option>
-                  <option value="price-high">Price: High to Low</option>
+                  <option value="price-low">Price: Low → High</option>
+                  <option value="price-high">Price: High → Low</option>
                   <option value="popular">Most Popular</option>
                 </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground pointer-events-none" />
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5" />
               </div>
 
-              {/* Grid Layout Toggle */}
+              {/* Grid Toggle */}
               <div className="flex gap-2 p-1 rounded-lg bg-white/5 border border-purple-500/20">
                 <button
                   onClick={() => setGridCols(3)}
-                  className={`p-2 rounded transition-all duration-200 ${
-                    gridCols === 3 
-                      ? 'bg-purple-500/20 text-purple-300' 
-                      : 'text-muted-foreground hover:text-foreground'
+                  className={`p-2 rounded ${
+                    gridCols === 3
+                      ? "bg-purple-500/20 text-purple-300"
+                      : "text-muted-foreground"
                   }`}
                 >
                   <Grid3x3 className="w-5 h-5" />
                 </button>
                 <button
                   onClick={() => setGridCols(4)}
-                  className={`p-2 rounded transition-all duration-200 ${
-                    gridCols === 4 
-                      ? 'bg-purple-500/20 text-purple-300' 
-                      : 'text-muted-foreground hover:text-foreground'
+                  className={`p-2 rounded ${
+                    gridCols === 4
+                      ? "bg-purple-500/20 text-purple-300"
+                      : "text-muted-foreground"
                   }`}
                 >
                   <LayoutGrid className="w-5 h-5" />
@@ -93,42 +173,30 @@ export const AllNFTsPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Results Count */}
-        <div className="mb-6">
-          <p className="text-muted-foreground">
-            {filteredNFTs.length === mockNFTs.length 
-              ? `Showing all ${mockNFTs.length} NFTs`
-              : `Found ${filteredNFTs.length} of ${mockNFTs.length} NFTs`
-            }
+        {/* Grid */}
+        {loading ? (
+          <p className="text-center text-muted-foreground">
+            Loading NFTs from blockchain...
           </p>
-        </div>
-
-        {/* NFT Grid */}
-        {filteredNFTs.length > 0 ? (
-          <div className={`grid gap-6 ${
-            gridCols === 3 
-              ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3' 
-              : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4'
-          }`}>
+        ) : filteredNFTs.length > 0 ? (
+          <div
+            className={`grid gap-6 ${
+              gridCols === 3
+                ? "grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
+                : "grid-cols-1 md:grid-cols-2 lg:grid-cols-4"
+            }`}
+          >
             {filteredNFTs.map((nft) => (
               <NFTCard key={nft.id} nft={nft} />
             ))}
           </div>
         ) : (
           <div className="text-center py-20">
-            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-purple-500/10 flex items-center justify-center">
-              <LayoutGrid className="w-10 h-10 text-purple-400" />
-            </div>
-            <h3 className="text-2xl font-semibold mb-2">No NFTs Found</h3>
-            <p className="text-muted-foreground mb-6">
-              Try searching with different keywords
+            <LayoutGrid className="w-12 h-12 mx-auto text-purple-400 mb-4" />
+            <h3 className="text-2xl font-semibold">No NFTs Found</h3>
+            <p className="text-muted-foreground">
+              Try adjusting your search
             </p>
-            <button
-              onClick={() => setSearchQuery('')}
-              className="px-6 py-3 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:shadow-[0_0_20px_rgba(139,92,246,0.5)] transition-all duration-300"
-            >
-              Clear Search
-            </button>
           </div>
         )}
       </div>
