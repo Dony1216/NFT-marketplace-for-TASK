@@ -11,6 +11,7 @@ const saleTypes = ["All", "Buy Now", "Auction"];
 
 export const MarketplacePage: React.FC = () => {
   const { nfts } = useNFTs();
+  console.log(nfts)
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedBlockchain, setSelectedBlockchain] = useState("All");
