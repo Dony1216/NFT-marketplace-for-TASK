@@ -25,11 +25,12 @@ export async function uploadFileToIPFS(file) {
   return `${PINATA_GATEWAY}${res.data.IpfsHash}`
 }
 
-export async function uploadMetadata(name, description, image, category) {
+export async function uploadMetadata(name, description, image, creator, category) {
   const metadata = {
     name,
     description,
     image,
+    creator,
     category,
   }
 

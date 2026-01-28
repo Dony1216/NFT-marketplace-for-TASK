@@ -42,7 +42,7 @@ export const CreateNFTPage: React.FC = () => {
     { value: "solana", label: "Solana", color: "success" },
   ] as const;
 
-  const categories = ["Art", "Gaming", "Photography", "Music", "Virtual Worlds", "Collectibles"];
+  const categories = ["Art", "Gaming", "Animals", "Music", "Others"];
 
   const steps = [
     { id: "upload", label: "Upload", number: 1 },
@@ -157,7 +157,7 @@ export const CreateNFTPage: React.FC = () => {
   }
 
   /* ---------------- CREATE NFT ---------------- */
-
+console.log(formData.category)
   async function createNFT() {
     if (!canMint) {
       alert(`⏳ Cooldown active. Please wait ${formatTime(cooldownLeft)}.`);
@@ -174,12 +174,14 @@ export const CreateNFTPage: React.FC = () => {
 
       // Upload image
       const imageUrl = await uploadFileToIPFS(uploadedImage);
+      const [creator] = await window.ethereum.request({ method: "eth_requestAccounts" });
 
       // Upload metadata
       const metadataUrl = await uploadMetadata(
         formData.title,
         formData.description,
         imageUrl,
+        creator,
         formData.category
       );
 
@@ -191,31 +193,8 @@ export const CreateNFTPage: React.FC = () => {
       const tx = await nft.mint(metadataUrl, {
         value: ethers.parseEther(MINT_FEE.toString()),
       });
-const receipt = await tx.wait();
+      await tx.wait();
 
-// get wallet address
-const provider = new ethers.BrowserProvider(window.ethereum);
-const signer = await provider.getSigner();
-const userAddress = await signer.getAddress();
-
-// create frontend NFT object
-addNFT({
-  id: `${Date.now()}`, // frontend-safe unique id
-  title: formData.title,
-  description: formData.description,
-  image: imageUrl,
-  price: Number(formData.price) || 0,
-  blockchain: formData.blockchain,
-  likes: 0,
-  creator: {
-    name: "You",
-    avatar: "/avatar.png",
-    verified: false,
-    address: userAddress,
-  },
-});
-console.log(addNFT);
-      alert("✅ NFT created successfully!");
       setCurrentStep("mint");
       await checkCooldown();
     } catch (err: any) {
@@ -256,13 +235,12 @@ console.log(addNFT);
             <React.Fragment key={step.id}>
               <div className="flex flex-col items-center">
                 <div
-                  className={`w-12 h-12 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${
-                    currentStep === step.id
+                  className={`w-12 h-12 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${currentStep === step.id
                       ? "bg-purple-500 border-purple-500 text-white"
                       : steps.findIndex((s) => s.id === currentStep) > index
-                      ? "bg-purple-500/20 border-purple-500 text-purple-400"
-                      : "bg-white/5 border-purple-500/20 text-muted-foreground"
-                  }`}
+                        ? "bg-purple-500/20 border-purple-500 text-purple-400"
+                        : "bg-white/5 border-purple-500/20 text-muted-foreground"
+                    }`}
                 >
                   {steps.findIndex((s) => s.id === currentStep) > index ? (
                     <CheckCircle2 className="w-6 h-6" />
@@ -271,20 +249,18 @@ console.log(addNFT);
                   )}
                 </div>
                 <span
-                  className={`text-sm mt-2 ${
-                    currentStep === step.id ? "text-purple-400" : "text-muted-foreground"
-                  }`}
+                  className={`text-sm mt-2 ${currentStep === step.id ? "text-purple-400" : "text-muted-foreground"
+                    }`}
                 >
                   {step.label}
                 </span>
               </div>
               {index < steps.length - 1 && (
                 <div
-                  className={`w-24 h-0.5 mx-4 mb-6 transition-all duration-300 ${
-                    steps.findIndex((s) => s.id === currentStep) > index
+                  className={`w-24 h-0.5 mx-4 mb-6 transition-all duration-300 ${steps.findIndex((s) => s.id === currentStep) > index
                       ? "bg-purple-500"
                       : "bg-purple-500/20"
-                  }`}
+                    }`}
                 />
               )}
             </React.Fragment>
@@ -301,11 +277,10 @@ console.log(addNFT);
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 onClick={() => fileInputRef.current?.click()}
-                className={`relative p-12 rounded-2xl border-2 border-dashed transition-all duration-300 cursor-pointer ${
-                  isDragging
+                className={`relative p-12 rounded-2xl border-2 border-dashed transition-all duration-300 cursor-pointer ${isDragging
                     ? "border-purple-500 bg-purple-500/10"
                     : "border-purple-500/30 bg-gradient-to-br from-white/5 to-white/[0.02] hover:border-purple-500/50 hover:bg-purple-500/5"
-                }`}
+                  }`}
               >
                 <input
                   ref={fileInputRef}
@@ -346,10 +321,6 @@ console.log(addNFT);
                     <h4 className="text-lg font-semibold mb-2">{formData.title || "Untitled NFT"}</h4>
                     <p className="text-sm text-muted-foreground mb-4">{formData.description || "No description"}</p>
                     <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xs text-muted-foreground mb-1">Price</p>
-                        <p className="text-xl font-bold">{formData.price || "0"} ETH</p>
-                      </div>
                       <Badge
                         variant={
                           blockchainOptions.find((b) => b.value === formData.blockchain)?.color || "purple"
@@ -363,7 +334,7 @@ console.log(addNFT);
               </div>
 
               {/* Right: Form */}
-              <div className="space-y-4">
+              <div className="space-y-4 mt-4">
                 <Input
                   label="Title *"
                   placeholder="Enter NFT title"
@@ -371,7 +342,7 @@ console.log(addNFT);
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                 />
                 <textarea
-                  className="w-full p-4 rounded-lg bg-white/5 border border-purple-500/20 text-foreground placeholder:text-muted-foreground focus:outline-none"
+                  className="w-full h-1/3 p-4 rounded-lg bg-white/5 border border-purple-500/20 text-foreground placeholder:text-muted-foreground focus:outline-none"
                   placeholder="Description"
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -382,14 +353,14 @@ console.log(addNFT);
                   className="w-full p-3 rounded-lg bg-white/5 border border-purple-500/20 text-foreground"
                 >
                   {categories.map((cat) => (
-                    <option key={cat} value={cat}>
+                    <option key={cat} value={cat} >
                       {cat}
                     </option>
                   ))}
                 </select>
 
                 {/* Gas + cooldown info */}
-                <div className="bg-slate-900/70 backdrop-blur-md p-4 rounded-xl text-sm text-gray-400 mb-4">
+                <div className="bg-slate-900/70 backdrop-blur-md p-6 rounded-xl text-sm text-gray-400 mb-4">
                   <p>💰 Mint fee: <b>{MINT_FEE} ETH</b></p>
                   <p>⏳ Cooldown: <b>5 minutes</b></p>
                   <p>⛽ Gas: <b>{gasCost ?? "—"} ETH</b></p>
