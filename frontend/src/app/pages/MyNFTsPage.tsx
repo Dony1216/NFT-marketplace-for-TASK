@@ -9,6 +9,7 @@ interface NFT {
   description?: string;
   image?: string;
   owner: string;
+  creator: string;
   category?: string;
 }
 
@@ -31,11 +32,10 @@ export const MyNFTsPage: React.FC = () => {
     try {
       const [account] = await window.ethereum.request({ method: "eth_requestAccounts" });
       const nftContract = await getNFTContract();
-
       const totalSupply = Number(await nftContract.tokenCount());
       const owned: NFT[] = [];
       const created: NFT[] = [];
-
+      console.log(totalSupply)
       for (let i = 1; i <= totalSupply; i++) {
         try {
           const owner = await nftContract.ownerOf(i);
@@ -50,11 +50,25 @@ export const MyNFTsPage: React.FC = () => {
             name: metadata.name,
             description: metadata.description,
             image: metadata.image,
+            creator: metadata.creator,
             category: metadata.category,
           };
+          console.log(nftData)
+          const creator =
+            typeof metadata.creator === "string"
+              ? metadata.creator
+              : metadata.creator?.address;
+
+          if (
+            creator &&
+            creator.toLowerCase() === account.toLowerCase()
+          ) {
+            created.push(nftData);
+          }
+          console.log("NFT", i, "creator field:", metadata.creator);
 
           if (owner.toLowerCase() === account.toLowerCase()) owned.push(nftData);
-          if (metadata.creator?.toLowerCase() === account.toLowerCase()) created.push(nftData);
+          // if (metadata.creator?.toLowerCase() === account.toLowerCase()) created.push(nftData);
         } catch (err) {
           console.warn(`Failed to fetch NFT #${i}`, err);
         }
@@ -102,18 +116,16 @@ export const MyNFTsPage: React.FC = () => {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-6 py-4 transition-all duration-200 ${
-                activeTab === tab.id
+              className={`flex items-center gap-2 px-6 py-4 transition-all duration-200 ${activeTab === tab.id
                   ? "border-b-2 border-purple-500 text-purple-400"
                   : "text-muted-foreground hover:text-foreground"
-              }`}
+                }`}
             >
               <tab.icon className="w-5 h-5" />
               {tab.label}
               <span
-                className={`px-2 py-0.5 rounded-full text-xs ${
-                  activeTab === tab.id ? "bg-purple-500/20 text-purple-300" : "bg-white/5 text-muted-foreground"
-                }`}
+                className={`px-2 py-0.5 rounded-full text-xs ${activeTab === tab.id ? "bg-purple-500/20 text-purple-300" : "bg-white/5 text-muted-foreground"
+                  }`}
               >
                 {tab.count}
               </span>
@@ -123,7 +135,7 @@ export const MyNFTsPage: React.FC = () => {
 
         {/* NFT Grid */}
         {loading ? (
-          <p className="text-center text-muted-foreground">Loading NFTs...</p>
+          <p className="text-center text-muted-foreground mt-10">Loading NFTs...</p>
         ) : getCurrentNFTs().length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {getCurrentNFTs().map((nft) => (
