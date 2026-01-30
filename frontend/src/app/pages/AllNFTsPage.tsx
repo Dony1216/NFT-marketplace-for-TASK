@@ -122,7 +122,7 @@ export const AllNFTsPage: React.FC = () => {
         </div>
 
         {/* Filter Bar */}
-        <div className="mb-8 p-6 rounded-2xl bg-gradient-to-br from-white/5 to-white/[0.02] backdrop-blur-sm border border-purple-500/20">
+        <div className="mb-8 p-4 rounded-2xl bg-gradient-to-br from-white/5 to-white/[0.02] backdrop-blur-sm border border-purple-500/20">
           <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
             <SearchBar
               value={searchQuery}
