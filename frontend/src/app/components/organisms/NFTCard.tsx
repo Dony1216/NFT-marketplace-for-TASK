@@ -1,6 +1,7 @@
 import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAccount } from "wagmi";
+import { formatAddress } from "../../utils/formatters";
 import { ShoppingCart, Tag, Gavel, ExternalLink } from "lucide-react";
 import { Button } from "../atoms/Button";
 import { Badge } from "../atoms/Badge";
@@ -8,12 +9,15 @@ import { Badge } from "../atoms/Badge";
 interface NFTCardProps {
   nft: {
     id: string;
-    title: string;
+    name: string;
+    description: string;
     image: string;
     price: number;
     creator: string;
     isListed?: boolean;
     owner: string;
+    category:string;
+    likes: number;
   };
 }
 
@@ -22,7 +26,7 @@ export const NFTCard: React.FC<NFTCardProps> = ({ nft }) => {
   const navigate = useNavigate();
 
   const isOwner = address?.toLowerCase() === nft.owner?.toLowerCase() || 
-                  address?.toLowerCase() === nft.creator.address?.toLowerCase();
+                  address?.toLowerCase() === nft.creator?.toLowerCase();
   const handleAction = (e: React.MouseEvent, path: string) => {
     e.preventDefault();
     e.stopPropagation();
@@ -38,7 +42,7 @@ export const NFTCard: React.FC<NFTCardProps> = ({ nft }) => {
         <div className="relative aspect-square overflow-hidden">
           <img 
             src={nft.image} 
-            alt={nft.title} 
+            alt={nft.name} 
             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
           />
           {isOwner && (
@@ -56,9 +60,9 @@ export const NFTCard: React.FC<NFTCardProps> = ({ nft }) => {
           <div className="flex justify-between items-start mb-4">
             <div>
               <h3 className="text-lg font-bold text-white mb-1 group-hover:text-purple-400 transition-colors">
-                {nft.title}
+                {nft.name}
               </h3>
-              <p className="text-sm text-gray-400">Creator: </p>
+              <p className="text-sm text-gray-400">Creator: {formatAddress(nft.creator)} </p>
             </div>
             <ExternalLink className="w-4 h-4 text-gray-500 group-hover:text-white transition-colors" />
           </div>

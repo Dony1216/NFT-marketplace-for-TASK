@@ -7,18 +7,14 @@ import { getNFTContract } from "../../web3";
 
 interface NFT {
   id: string;
-  title: string;
+  name: string;
   description: string;
   image: string;
   price: number;
-  blockchain: "ethereum";
   likes: number;
-  creator: {
-    name: string;
-    avatar: string;
-    verified: boolean;
-    address?: string;
-  };
+  creator: string;
+  owner: string;
+  category: string;
 }
 
 export const AllNFTsPage: React.FC = () => {
@@ -54,19 +50,14 @@ export const AllNFTsPage: React.FC = () => {
 
           items.push({
             id: tokenId.toString(),
-            title: metadata.name ?? "Untitled NFT",
+            name: metadata.name ?? "Untitled NFT",
             description: metadata.description ?? "",
             image: metadata.image,
             owner,
             price: metadata.price ?? 0,
-            blockchain: "ethereum",
+            category: metadata.category ?? "uncategorized",
             likes: 0,
-            creator: {
-              name: metadata.creatorName ?? "Unknown",
-              avatar: "/avatar.png",
-              verified: false,
-              address: metadata.creator ?? owner,
-            },
+            creator: metadata.creator ?? owner,
           });
         } catch (err) {
           console.warn(`Failed to load NFT #${tokenId}`, err);
@@ -90,8 +81,8 @@ export const AllNFTsPage: React.FC = () => {
   const filteredNFTs = nfts
     .filter(
       (nft) =>
-        nft.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        nft.creator.name.toLowerCase().includes(searchQuery.toLowerCase())
+        nft.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        nft.creator.toLowerCase().includes(searchQuery.toLowerCase())
     )
     .sort((a, b) => {
       switch (sortBy) {

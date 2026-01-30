@@ -5,12 +5,15 @@ import { Package, Award, Gavel } from "lucide-react";
 
 interface NFT {
   id: string;
-  name?: string;
-  description?: string;
-  image?: string;
+  name: string;
+  description: string;
+  image: string;
   owner: string;
+  likes: number;
+  price: number;
   creator: string;
-  category?: string;
+  category: string;
+  isListed?: boolean;
 }
 
 export const MyNFTsPage: React.FC = () => {
@@ -30,7 +33,12 @@ export const MyNFTsPage: React.FC = () => {
     setLoading(true);
 
     try {
-      const [account] = await window.ethereum.request({ method: "eth_requestAccounts" });
+      const accounts = await window.ethereum!.request({
+        method: "eth_requestAccounts",
+      }) as string[];
+
+      const [account] = accounts;
+
       const nftContract = await getNFTContract();
       const totalSupply = Number(await nftContract.tokenCount());
       const owned: NFT[] = [];
@@ -47,14 +55,17 @@ export const MyNFTsPage: React.FC = () => {
           const nftData: NFT = {
             id: i.toString(),
             owner,
+            likes: 0,
+            price: 0,
             name: metadata.name,
             description: metadata.description,
             image: metadata.image,
             creator: metadata.creator,
             category: metadata.category,
+            isListed: false,
           };
-      console.log(nftData)
-      
+          console.log(nftData)
+
           if (owner.toLowerCase() === account.toLowerCase()) owned.push(nftData);
           if (metadata.creator?.toLowerCase() === account.toLowerCase()) created.push(nftData);
         } catch (err) {
@@ -104,18 +115,16 @@ export const MyNFTsPage: React.FC = () => {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-6 py-4 transition-all duration-200 ${
-                activeTab === tab.id
+              className={`flex items-center gap-2 px-6 py-4 transition-all duration-200 ${activeTab === tab.id
                   ? "border-b-2 border-purple-500 text-purple-400"
                   : "text-muted-foreground hover:text-foreground"
-              }`}
+                }`}
             >
               <tab.icon className="w-5 h-5" />
               {tab.label}
               <span
-                className={`px-2 py-0.5 rounded-full text-xs ${
-                  activeTab === tab.id ? "bg-purple-500/20 text-purple-300" : "bg-white/5 text-muted-foreground"
-                }`}
+                className={`px-2 py-0.5 rounded-full text-xs ${activeTab === tab.id ? "bg-purple-500/20 text-purple-300" : "bg-white/5 text-muted-foreground"
+                  }`}
               >
                 {tab.count}
               </span>
