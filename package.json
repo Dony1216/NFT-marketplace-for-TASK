@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@metamask/providers": "^22.1.1",
     "axios": "^1.13.4",
     "ethers": "^6.16.0"
   }

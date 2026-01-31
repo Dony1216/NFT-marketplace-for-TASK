@@ -5,12 +5,15 @@ import { Package, Award, Gavel } from "lucide-react";
 
 interface NFT {
   id: string;
-  name?: string;
-  description?: string;
-  image?: string;
+  name: string;
+  description: string;
+  image: string;
   owner: string;
+  likes: number;
+  price: number;
   creator: string;
-  category?: string;
+  category: string;
+  isListed?: boolean;
 }
 
 export const MyNFTsPage: React.FC = () => {
@@ -30,7 +33,12 @@ export const MyNFTsPage: React.FC = () => {
     setLoading(true);
 
     try {
-      const [account] = await window.ethereum.request({ method: "eth_requestAccounts" });
+      const accounts = await window.ethereum!.request({
+        method: "eth_requestAccounts",
+      }) as string[];
+
+      const [account] = accounts;
+
       const nftContract = await getNFTContract();
       const totalSupply = Number(await nftContract.tokenCount());
       const owned: NFT[] = [];
@@ -47,28 +55,19 @@ export const MyNFTsPage: React.FC = () => {
           const nftData: NFT = {
             id: i.toString(),
             owner,
+            likes: 0,
+            price: 0,
             name: metadata.name,
             description: metadata.description,
             image: metadata.image,
             creator: metadata.creator,
             category: metadata.category,
+            isListed: false,
           };
           console.log(nftData)
-          const creator =
-            typeof metadata.creator === "string"
-              ? metadata.creator
-              : metadata.creator?.address;
-
-          if (
-            creator &&
-            creator.toLowerCase() === account.toLowerCase()
-          ) {
-            created.push(nftData);
-          }
-          console.log("NFT", i, "creator field:", metadata.creator);
 
           if (owner.toLowerCase() === account.toLowerCase()) owned.push(nftData);
-          // if (metadata.creator?.toLowerCase() === account.toLowerCase()) created.push(nftData);
+          if (metadata.creator?.toLowerCase() === account.toLowerCase()) created.push(nftData);
         } catch (err) {
           console.warn(`Failed to fetch NFT #${i}`, err);
         }

@@ -23,15 +23,11 @@ export const AuctionsPage: React.FC = () => {
 
     switch (sortBy) {
       case "ending-soon":
-        filtered.sort(
-          (a, b) =>
-            a.auctionEndTime!.getTime() -
-            b.auctionEndTime!.getTime()
-        );
+        filtered.sort((a, b) => a.auctionEndTime! - b.auctionEndTime!);
         break;
 
       case "newly-listed":
-        filtered.sort((a, b) => b.id - a.id);
+        filtered.sort((a, b) => a.auctionEndTime! - b.auctionEndTime!);
         break;
 
       case "price-high":
