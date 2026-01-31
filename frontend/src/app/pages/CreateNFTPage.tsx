@@ -57,9 +57,11 @@ export const CreateNFTPage: React.FC = () => {
       if (!window.ethereum) return;
 
       const nft = await getNFTContract();
-      const [account] = await window.ethereum.request({
+      const accounts = await window.ethereum!.request({
         method: "eth_requestAccounts",
-      });
+      }) as string[];
+
+      const [account] = accounts;
 
       const lastMint = await nft.lastMintTime(account);
       const cooldown = await nft.mintCooldown();
@@ -138,6 +140,9 @@ export const CreateNFTPage: React.FC = () => {
 
   async function estimateMintGas(metadataUrl: string) {
     try {
+      if (!window.ethereum) {
+  throw new Error("MetaMask is not installed");
+}
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const nft = await getNFTContract(true);
@@ -174,7 +179,11 @@ console.log(formData.category)
 
       // Upload image
       const imageUrl = await uploadFileToIPFS(uploadedImage);
-      const [creator] = await window.ethereum.request({ method: "eth_requestAccounts" });
+      const creators = await window.ethereum!.request({
+        method: "eth_requestAccounts",
+      }) as string[];
+
+      const [creator] = creators;
 
       // Upload metadata
       const metadataUrl = await uploadMetadata(

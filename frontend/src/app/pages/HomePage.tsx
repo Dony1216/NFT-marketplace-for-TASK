@@ -1,14 +1,73 @@
-import React from "react";
+import React, {useState, useEffect} from "react";
 import { Link } from "react-router-dom";
 import { Button } from "../components/atoms/Button";
 import { NFTCard } from "../components/organisms/NFTCard";
 import { CreatorCard } from "../components/molecules/CreatorCard";
-import { useNFTs } from "../../context/NFTContext";
 import { mockCreators } from "../utils/mockData";
 import { TrendingUp, Zap, Shield, Globe } from "lucide-react";
+import { getNFTContract } from "../../web3";
+
+interface NFT {
+  id: string;
+  name: string;
+  description: string;
+  image: string;
+  price: number;
+  likes: number;
+  creator: string;
+  owner: string;
+  category: string;
+}
 
 export const HomePage: React.FC = () => {
-  const { nfts } = useNFTs();
+    const [nfts, setNFTs] = useState<NFT[]>([]);
+    const [loading, setLoading] = useState(false);
+
+  const fetchAllNFTs = async () => {
+    if (!window.ethereum) return;
+    setLoading(true);
+
+    try {
+      const nftContract = await getNFTContract();
+      const totalSupply = Number(await nftContract.tokenCount());
+
+      const items: NFT[] = [];
+
+      for (let tokenId = 1; tokenId <= totalSupply; tokenId++) {
+        try {
+          const tokenURI = await nftContract.tokenURI(tokenId);
+          const owner = await nftContract.ownerOf(tokenId);
+
+          const res = await fetch(tokenURI);
+          const metadata = await res.json();
+
+          items.push({
+            id: tokenId.toString(),
+            name: metadata.name ?? "Untitled NFT",
+            description: metadata.description ?? "",
+            image: metadata.image,
+            owner,
+            price: metadata.price ?? 0,
+            category: metadata.category ?? "uncategorized",
+            likes: 0,
+            creator: metadata.creator ?? owner,
+          });
+        } catch (err) {
+          console.warn(`Failed to load NFT #${tokenId}`, err);
+        }
+      }
+
+      setNFTs(items.reverse()); // newest first
+    } catch (err) {
+      console.error("Failed to fetch NFTs", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAllNFTs();
+  }, []);
 
   // Safe derived data
   const featuredNFT = nfts[0];
