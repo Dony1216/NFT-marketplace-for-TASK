@@ -141,8 +141,8 @@ export const CreateNFTPage: React.FC = () => {
   async function estimateMintGas(metadataUrl: string) {
     try {
       if (!window.ethereum) {
-  throw new Error("MetaMask is not installed");
-}
+        throw new Error("MetaMask is not installed");
+      }
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const nft = await getNFTContract(true);
@@ -162,7 +162,7 @@ export const CreateNFTPage: React.FC = () => {
   }
 
   /* ---------------- CREATE NFT ---------------- */
-console.log(formData.category)
+  console.log(formData.category)
   async function createNFT() {
     if (!canMint) {
       alert(`⏳ Cooldown active. Please wait ${formatTime(cooldownLeft)}.`);
@@ -245,10 +245,10 @@ console.log(formData.category)
               <div className="flex flex-col items-center">
                 <div
                   className={`w-12 h-12 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${currentStep === step.id
-                      ? "bg-purple-500 border-purple-500 text-white"
-                      : steps.findIndex((s) => s.id === currentStep) > index
-                        ? "bg-purple-500/20 border-purple-500 text-purple-400"
-                        : "bg-white/5 border-purple-500/20 text-muted-foreground"
+                    ? "bg-purple-500 border-purple-500 text-white"
+                    : steps.findIndex((s) => s.id === currentStep) > index
+                      ? "bg-purple-500/20 border-purple-500 text-purple-400"
+                      : "bg-white/5 border-purple-500/20 text-muted-foreground"
                     }`}
                 >
                   {steps.findIndex((s) => s.id === currentStep) > index ? (
@@ -267,8 +267,8 @@ console.log(formData.category)
               {index < steps.length - 1 && (
                 <div
                   className={`w-24 h-0.5 mx-4 mb-6 transition-all duration-300 ${steps.findIndex((s) => s.id === currentStep) > index
-                      ? "bg-purple-500"
-                      : "bg-purple-500/20"
+                    ? "bg-purple-500"
+                    : "bg-purple-500/20"
                     }`}
                 />
               )}
@@ -287,8 +287,8 @@ console.log(formData.category)
                 onDrop={handleDrop}
                 onClick={() => fileInputRef.current?.click()}
                 className={`relative p-12 rounded-2xl border-2 border-dashed transition-all duration-300 cursor-pointer ${isDragging
-                    ? "border-purple-500 bg-purple-500/10"
-                    : "border-purple-500/30 bg-gradient-to-br from-white/5 to-white/[0.02] hover:border-purple-500/50 hover:bg-purple-500/5"
+                  ? "border-purple-500 bg-purple-500/10"
+                  : "border-purple-500/30 bg-gradient-to-br from-white/5 to-white/[0.02] hover:border-purple-500/50 hover:bg-purple-500/5"
                   }`}
               >
                 <input

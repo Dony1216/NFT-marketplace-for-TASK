@@ -2,6 +2,11 @@
 @import './tailwind.css';
 @import './theme.css';
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
 /* Custom Animations */
 @keyframes float {
   0%, 100% {
