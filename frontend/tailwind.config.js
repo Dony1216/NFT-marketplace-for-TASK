@@ -3,9 +3,6 @@ export default {
     "./index.html",
     "./src/**/*.{js,jsx}"
   ],
-  theme: {
-    extend: {},
-  },
   plugins: [],
 
   theme: {
@@ -20,10 +17,11 @@ export default {
         "100%": { opacity: 1, transform: "scale(1)" },
       },
     },
-    animation: {
-      fadeIn: "fadeIn 0.2s ease-out",
-      scaleIn: "scaleIn 0.25s ease-out",
-    },
+animation: {
+  fadeIn: "fadeIn 1s ease-out forwards",
+  scaleIn: "scaleIn 0.8s ease-out forwards",
+},
+
   },
 },
 

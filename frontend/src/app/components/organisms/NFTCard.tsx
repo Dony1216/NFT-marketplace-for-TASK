@@ -7,6 +7,7 @@ import { formatAddress } from "../../utils/formatters";
 import { ShoppingCart, Tag, Gavel, ExternalLink } from "lucide-react";
 import { Button } from "../atoms/Button";
 import { Badge } from "../atoms/Badge";
+import { ListNFTForm } from "../molecules/ListNFTForm";
 
 interface NFTCardProps {
   nft: {
@@ -129,20 +130,25 @@ export const NFTCard: React.FC<NFTCardProps> = ({ nft }) => {
       </Link>
 
       <Modal isOpen={!!openModal} onClose={() => setOpenModal(null)}>
-        {openModal === "list" && (
-          <>
-            <h3 className="text-lg font-bold text-white mb-4">List NFT</h3>
-            <input type="number" className="w-full rounded"></input>
-            <Button className="w-full">List for Sale</Button>
-          </>
-        )}
 
-        {openModal === "auction" && (
-          <>
-            <h3 className="text-lg font-bold text-white mb-4">Start Auction</h3>
-            <Button className="w-full">Create Auction</Button>
-          </>
-        )}
+        <div className="animate-fadeIn">
+          {openModal === "list" && (
+            <ListNFTForm
+              onSubmit={(price) => {
+                console.log("Listing price:", price);
+                // next step: trigger Web3 tx
+                setOpenModal(null);
+              }}
+            />
+          )}
+          {openModal === "auction" && (
+            <>
+              <h3 className="text-lg font-bold text-white mb-4">Start Auction</h3>
+              <Button className="w-full">Create Auction</Button>
+            </>
+          )}
+        </div>
+
       </Modal>
     </>
 
