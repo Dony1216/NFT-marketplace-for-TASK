@@ -5,13 +5,17 @@ import { Button } from '../atoms/Button';
 import { formatAddress } from '../../utils/formatters';
 import { useConnect, useAccount, useDisconnect } from "wagmi"
 
-
 export const Navbar: React.FC = () => {
   const [scrolled, setScrolled] = useState(false);
   const location = useLocation();
   const { connect, connectors } = useConnect()
   const { address, isConnected } = useAccount()
   const { disconnect } = useDisconnect()
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const injectedWallet = connectors.find(c => c.id === 'injected')
 
@@ -96,7 +100,7 @@ export const Navbar: React.FC = () => {
 
           {/* Wallet Connection */}
           <div className="flex items-center gap-4">
-            {isConnected && address ? (
+            {mounted && isConnected && address ? (
               <div className="flex items-center gap-3">
                 <div className="px-4 py-2 rounded-lg bg-purple-500/10 border border-purple-500/30 backdrop-blur-sm">
                   <span className="text-sm text-purple-300">
@@ -116,7 +120,11 @@ export const Navbar: React.FC = () => {
               <Button
                 variant="primary"
                 size="sm"
-                onClick={() => connect({ connector: injectedWallet })}
+                disabled={!injectedWallet}
+                onClick={() => {
+                  if (!injectedWallet) return
+                  connect({ connector: injectedWallet })
+                }}
               >
                 <Wallet className="w-4 h-4" />
                 Connect Wallet

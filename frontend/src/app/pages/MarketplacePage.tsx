@@ -1,69 +1,127 @@
-import React, { useState, useMemo } from "react";
+// src/app/pages/MarketplacePage.tsx
+import React, { useState, useEffect, useMemo } from "react";
 import { NFTCard } from "../components/organisms/NFTCard";
 import { SearchBar } from "../components/molecules/SearchBar";
 import { FilterChip } from "../components/molecules/FilterChip";
 import { ChevronDown, SlidersHorizontal, X } from "lucide-react";
 import { Button } from "../components/atoms/Button";
-import { useNFTs } from "../../context/NFTContext";
+import { getNFTContract, getMarketplaceContract } from "../../web3";
+import { ethers } from "ethers";
+import { NFT_ADDRESS } from "../../constants";
 
 const blockchains = ["All", "Ethereum", "Polygon", "Solana"];
 const saleTypes = ["All", "Buy Now", "Auction"];
 
+interface NFT {
+  id: string;
+  name: string;
+  description: string;
+  image: string;
+  price: number;
+  likes: number;
+  creator: string;
+  owner: string;
+  category: string;
+  auctionEndTime?: number;
+  highestBid?: number;
+}
+
 export const MarketplacePage: React.FC = () => {
-  const { nfts } = useNFTs();
-  console.log(nfts)
+  const [nfts, setNFTs] = useState<NFT[]>([]);
+  const [loading, setLoading] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedBlockchain, setSelectedBlockchain] = useState("All");
   const [selectedSaleType, setSelectedSaleType] = useState("All");
-  const [priceRange, setPriceRange] = useState<[number, number]>([0, 10]);
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, 20]);
   const [sortBy, setSortBy] =
     useState<"recent" | "price-low" | "price-high" | "popular">("recent");
   const [showFilters, setShowFilters] = useState(true);
 
-  // ================= FILTER + SORT =================
+  /* ---------------- FETCH ALL NFTS + MARKETPLACE PRICE ---------------- */
+const fetchMarketplaceNFTs = async () => {
+  if (!window.ethereum) return;
+  setLoading(true);
+  try {
+    const marketplace = await getMarketplaceContract();
+    const nftContract = await getNFTContract();
+    const totalSupply = Number(await nftContract.tokenCount());
+    const items: NFT[] = [];
+
+    for (let tokenId = 1; tokenId <= totalSupply; tokenId++) {
+      try {
+        const sold = await marketplace.isSold(NFT_ADDRESS, tokenId);
+        if (sold) continue; // Skip sold NFTs
+
+        const tokenURI = await nftContract.tokenURI(tokenId);
+        const owner = await nftContract.ownerOf(tokenId);
+
+        const res = await fetch(tokenURI);
+        const metadata = await res.json();
+
+        items.push({
+          id: tokenId.toString(),
+          name: metadata.name ?? "Untitled NFT",
+          description: metadata.description ?? "",
+          image: metadata.image,
+          owner,
+          price: metadata.price ?? 0,
+          category: metadata.category ?? "uncategorized",
+          likes: 0,
+          creator: metadata.creator ?? owner,
+        });
+      } catch (err) {
+        console.warn(`Failed to load NFT #${tokenId}`, err);
+      }
+    }
+
+    setNFTs(items.reverse());
+  } catch (err) {
+    console.error(err);
+  } finally {
+    setLoading(false);
+  }
+};
+
+
+  useEffect(() => {
+    fetchMarketplaceNFTs();
+  }, []);
+
+  /* ---------------- FILTER + SORT ---------------- */
   const filteredNFTs = useMemo(() => {
     let filtered = nfts.filter((nft) => {
-      // Search
       const matchesSearch =
-        nft.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        nft.creator.name.toLowerCase().includes(searchQuery.toLowerCase());
+        nft.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        nft.creator.toLowerCase().includes(searchQuery.toLowerCase());
 
-      // Blockchain
       const matchesBlockchain =
         selectedBlockchain === "All" ||
-        nft.blockchain === selectedBlockchain.toLowerCase();
+        nft.category.toLowerCase() === selectedBlockchain.toLowerCase(); // adjust if blockchain is stored differently
 
-      // Sale type
       const matchesSaleType =
         selectedSaleType === "All" ||
         (selectedSaleType === "Auction" && nft.auctionEndTime) ||
         (selectedSaleType === "Buy Now" && !nft.auctionEndTime);
 
-      // Price
-      const price = nft.highestBid ?? nft.price;
+      const priceToCheck = nft.highestBid ?? nft.price;
       const matchesPrice =
-        price >= priceRange[0] && price <= priceRange[1];
+        priceToCheck >= priceRange[0] && priceToCheck <= priceRange[1];
 
       return (
-        matchesSearch &&
-        matchesBlockchain &&
-        matchesSaleType &&
-        matchesPrice
+        matchesSearch && matchesBlockchain && matchesSaleType && matchesPrice
       );
     });
 
     switch (sortBy) {
       case "price-low":
         filtered.sort(
-          (a, b) =>
-            (a.highestBid ?? a.price) - (b.highestBid ?? b.price)
+          (a, b) => (a.highestBid ?? a.price) - (b.highestBid ?? b.price)
         );
         break;
       case "price-high":
         filtered.sort(
-          (a, b) =>
-            (b.highestBid ?? b.price) - (a.highestBid ?? a.price)
+          (a, b) => (b.highestBid ?? b.price) - (a.highestBid ?? a.price)
         );
         break;
       case "popular":
@@ -74,16 +132,8 @@ export const MarketplacePage: React.FC = () => {
     }
 
     return filtered;
-  }, [
-    nfts,
-    searchQuery,
-    selectedBlockchain,
-    selectedSaleType,
-    priceRange,
-    sortBy,
-  ]);
+  }, [nfts, searchQuery, selectedBlockchain, selectedSaleType, priceRange, sortBy]);
 
-  // ================= ACTIVE FILTERS =================
   const activeFilters = useMemo(() => {
     const filters: { type: string; value: string }[] = [];
     if (selectedBlockchain !== "All")
@@ -101,21 +151,20 @@ export const MarketplacePage: React.FC = () => {
   const clearFilter = (type: string) => {
     if (type === "blockchain") setSelectedBlockchain("All");
     if (type === "saleType") setSelectedSaleType("All");
-    if (type === "price") setPriceRange([0, 10]);
+    if (type === "price") setPriceRange([0, 20]);
   };
 
   const clearAllFilters = () => {
     setSelectedBlockchain("All");
     setSelectedSaleType("All");
-    setPriceRange([0, 10]);
+    setPriceRange([0, 20]);
     setSearchQuery("");
   };
 
-  // ================= RENDER =================
+  /* ---------------- RENDER ---------------- */
   return (
     <div className="min-h-screen pt-24 pb-20">
       <div className="container mx-auto px-6">
-
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-4xl font-bold mb-4">Explore Marketplace</h1>
@@ -127,7 +176,6 @@ export const MarketplacePage: React.FC = () => {
         {/* Search & Sort */}
         <div className="flex flex-col md:flex-row gap-4 mb-6">
           <SearchBar value={searchQuery} onChange={setSearchQuery} />
-
           <div className="flex gap-4">
             <div className="relative">
               <select
@@ -170,12 +218,10 @@ export const MarketplacePage: React.FC = () => {
         )}
 
         <div className="flex gap-8">
-
           {/* Sidebar */}
           {showFilters && (
             <aside className="w-80 hidden lg:block">
               <div className="space-y-6 sticky top-24">
-
                 {/* Blockchain */}
                 <div className="p-6 rounded-2xl bg-white/5 border border-purple-500/20">
                   <h3 className="font-semibold mb-4">Blockchain</h3>
@@ -218,8 +264,8 @@ export const MarketplacePage: React.FC = () => {
                   <input
                     type="range"
                     min="0"
-                    max="10"
-                    step="0.1"
+                    max="20"
+                    step="0.01"
                     value={priceRange[1]}
                     onChange={(e) =>
                       setPriceRange([0, parseFloat(e.target.value)])
@@ -230,7 +276,6 @@ export const MarketplacePage: React.FC = () => {
                     Up to <strong>{priceRange[1]} ETH</strong>
                   </p>
                 </div>
-
               </div>
             </aside>
           )}
@@ -241,7 +286,9 @@ export const MarketplacePage: React.FC = () => {
               Showing {filteredNFTs.length} of {nfts.length} NFTs
             </p>
 
-            {filteredNFTs.length > 0 ? (
+            {loading ? (
+              <p className="text-center text-muted-foreground">Loading NFTs...</p>
+            ) : filteredNFTs.length > 0 ? (
               <div className="grid md:grid-cols-3 gap-6">
                 {filteredNFTs.map((nft) => (
                   <NFTCard key={nft.id} nft={nft} />
@@ -257,7 +304,6 @@ export const MarketplacePage: React.FC = () => {
               </div>
             )}
           </div>
-
         </div>
       </div>
     </div>

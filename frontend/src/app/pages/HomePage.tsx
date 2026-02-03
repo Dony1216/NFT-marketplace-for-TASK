@@ -1,11 +1,13 @@
-import React, {useState, useEffect} from "react";
+import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "../components/atoms/Button";
 import { NFTCard } from "../components/organisms/NFTCard";
 import { CreatorCard } from "../components/molecules/CreatorCard";
 import { mockCreators } from "../utils/mockData";
 import { TrendingUp, Zap, Shield, Globe } from "lucide-react";
-import { getNFTContract } from "../../web3";
+import { getNFTContract, getMarketplaceContract } from "../../web3";
+import { MARKETPLACE_ADDRESS, NFT_ADDRESS } from "../../constants";
+import { ethers } from "ethers";
 
 interface NFT {
   id: string;
@@ -17,11 +19,12 @@ interface NFT {
   creator: string;
   owner: string;
   category: string;
+  isListed?: boolean;
 }
 
 export const HomePage: React.FC = () => {
-    const [nfts, setNFTs] = useState<NFT[]>([]);
-    const [loading, setLoading] = useState(false);
+  const [nfts, setNFTs] = useState<NFT[]>([]);
+  const [loading, setLoading] = useState(false);
 
   const fetchAllNFTs = async () => {
     if (!window.ethereum) return;
@@ -29,9 +32,13 @@ export const HomePage: React.FC = () => {
 
     try {
       const nftContract = await getNFTContract();
-      const totalSupply = Number(await nftContract.tokenCount());
+      const marketplace = await getMarketplaceContract();
 
+      const totalSupply = Number(await nftContract.tokenCount());
       const items: NFT[] = [];
+
+      // Get all listings once to avoid multiple contract calls
+      const allListings = await marketplace.getAllListings();
 
       for (let tokenId = 1; tokenId <= totalSupply; tokenId++) {
         try {
@@ -41,16 +48,33 @@ export const HomePage: React.FC = () => {
           const res = await fetch(tokenURI);
           const metadata = await res.json();
 
+          // Check if NFT is listed on marketplace
+          const listingIndex = await marketplace.listingIndex(NFT_ADDRESS, tokenId).catch(() => null);
+          let price = 0;
+          let isListed = false;
+
+          if (listingIndex !== null && listingIndex < allListings.length) {
+            const listing = allListings[listingIndex];
+            if (
+              listing.nft.toLowerCase() === NFT_ADDRESS.toLowerCase() &&
+              Number(listing.tokenId) === tokenId
+            ) {
+              price = Number(ethers.formatEther(listing.price));
+              isListed = true;
+            }
+          }
+
           items.push({
             id: tokenId.toString(),
             name: metadata.name ?? "Untitled NFT",
             description: metadata.description ?? "",
             image: metadata.image,
             owner,
-            price: metadata.price ?? 0,
+            price,
             category: metadata.category ?? "uncategorized",
             likes: 0,
             creator: metadata.creator ?? owner,
+            isListed,
           });
         } catch (err) {
           console.warn(`Failed to load NFT #${tokenId}`, err);
@@ -72,7 +96,7 @@ export const HomePage: React.FC = () => {
   // Safe derived data
   const featuredNFT = nfts[0];
   const trendingNFTs = nfts.slice(0, 4);
-  const liveAuctions = nfts.filter(nft => nft.auctionEndTime).slice(0, 4);
+  const liveAuctions = nfts.filter(nft => nft.isListed).slice(0, 4); // example filter for demo
   const topCreators = mockCreators.slice(0, 4);
 
   return (
@@ -141,28 +165,6 @@ export const HomePage: React.FC = () => {
         </div>
       </section>
 
-      {/* ================= FEATURES ================= */}
-      <section className="py-20">
-        <div className="container mx-auto px-6 grid md:grid-cols-3 gap-8">
-          {[Shield, Globe, TrendingUp].map((Icon, i) => (
-            <div
-              key={i}
-              className="p-8 rounded-2xl bg-white/5 border border-purple-500/20"
-            >
-              <div className="w-14 h-14 rounded-xl bg-purple-500/20 flex items-center justify-center mb-6">
-                <Icon className="w-7 h-7 text-purple-400" />
-              </div>
-              <h3 className="text-xl font-semibold mb-3">
-                {i === 0 ? "Secure & Reliable" : i === 1 ? "Global Community" : "Trending Markets"}
-              </h3>
-              <p className="text-muted-foreground">
-                Built on blockchain technology.
-              </p>
-            </div>
-          ))}
-        </div>
-      </section>
-
       {/* ================= TRENDING ================= */}
       <section className="py-20">
         <div className="container mx-auto px-6">
@@ -179,36 +181,6 @@ export const HomePage: React.FC = () => {
             ) : (
               <p className="text-muted-foreground">No trending NFTs yet</p>
             )}
-          </div>
-        </div>
-      </section>
-
-      {/* ================= AUCTIONS ================= */}
-      <section className="py-20">
-        <div className="container mx-auto px-6">
-          <h2 className="text-4xl font-bold mb-12">Live Auctions</h2>
-
-          <div className="grid md:grid-cols-4 gap-6">
-            {liveAuctions.length > 0 ? (
-              liveAuctions.map(nft => <NFTCard key={nft.id} nft={nft} />)
-            ) : (
-              <p className="text-muted-foreground">No live auctions</p>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* ================= CREATORS ================= */}
-      <section className="py-20">
-        <div className="container mx-auto px-6">
-          <h2 className="text-4xl font-bold text-center mb-12">
-            Top Creators
-          </h2>
-
-          <div className="grid md:grid-cols-4 gap-6">
-            {topCreators.map((creator, i) => (
-              <CreatorCard key={creator.id} creator={creator} rank={i + 1} />
-            ))}
           </div>
         </div>
       </section>

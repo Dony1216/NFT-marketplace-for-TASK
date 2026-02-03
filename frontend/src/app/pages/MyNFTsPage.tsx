@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { NFTCard } from "../components/organisms/NFTCard";
-import { getNFTContract } from "../../web3";
+import { getNFTContract, getMarketplaceContract } from "../../web3";
+import { NFT_ADDRESS, MARKETPLACE_ADDRESS } from "../../constants";
 import { Package, Award, Gavel } from "lucide-react";
+import { ethers } from "ethers";
 
 interface NFT {
   id: string;
@@ -21,6 +23,7 @@ export const MyNFTsPage: React.FC = () => {
   const [ownedNFTs, setOwnedNFTs] = useState<NFT[]>([]);
   const [createdNFTs, setCreatedNFTs] = useState<NFT[]>([]);
   const [loading, setLoading] = useState(false);
+  const [price, setPrice] = useState<Record<string, string>>({});
 
   const tabs = [
     { id: "owned" as const, label: "Owned", icon: Package, count: ownedNFTs.length },
@@ -28,27 +31,23 @@ export const MyNFTsPage: React.FC = () => {
     { id: "onAuction" as const, label: "On Auction", icon: Gavel, count: 0 },
   ];
 
+  // ================== Fetch NFTs ==================
   const fetchNFTs = async () => {
     if (!window.ethereum) return;
     setLoading(true);
 
     try {
-      const accounts = await window.ethereum!.request({
-        method: "eth_requestAccounts",
-      }) as string[];
-
-      const [account] = accounts;
-
+      const accounts = (await window.ethereum.request({ method: "eth_requestAccounts" })) as string[];
+      const account = accounts[0];
       const nftContract = await getNFTContract();
       const totalSupply = Number(await nftContract.tokenCount());
       const owned: NFT[] = [];
       const created: NFT[] = [];
-      console.log(totalSupply)
+
       for (let i = 1; i <= totalSupply; i++) {
         try {
           const owner = await nftContract.ownerOf(i);
           const tokenURI = await nftContract.tokenURI(i);
-
           const res = await fetch(tokenURI);
           const metadata = await res.json();
 
@@ -64,7 +63,6 @@ export const MyNFTsPage: React.FC = () => {
             category: metadata.category,
             isListed: false,
           };
-          console.log(nftData)
 
           if (owner.toLowerCase() === account.toLowerCase()) owned.push(nftData);
           if (metadata.creator?.toLowerCase() === account.toLowerCase()) created.push(nftData);
@@ -80,6 +78,41 @@ export const MyNFTsPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // ================== List NFT ==================
+  const listNFT = async (tokenId: string) => {
+    if (!price[tokenId]) return alert("Enter a price");
+    const nft = await getNFTContract(true);
+    const marketplace = await getMarketplaceContract(true);
+
+    // Approve marketplace
+    await nft.approve(MARKETPLACE_ADDRESS, tokenId);
+
+    // List NFT
+    const tx = await marketplace.listItem(NFT_ADDRESS, tokenId, ethers.parseEther(price[tokenId]));
+    await tx.wait();
+
+    alert("NFT listed!");
+    fetchNFTs();
+  };
+
+  // ================== Create Auction ==================
+  const createAuction = async (tokenId: string, startPrice: string, durationHours: number) => {
+    if (!startPrice || !durationHours) return alert("Enter start price and duration");
+
+    const nft = await getNFTContract(true);
+    const marketplace = await getMarketplaceContract(true);
+
+    // Approve first
+    await nft.approve(MARKETPLACE_ADDRESS, tokenId);
+
+    // Create auction
+    const tx = await marketplace.createAuction(NFT_ADDRESS, tokenId, ethers.parseEther(startPrice), durationHours * 3600);
+    await tx.wait();
+
+    alert("Auction created!");
+    fetchNFTs();
   };
 
   useEffect(() => {
@@ -115,16 +148,16 @@ export const MyNFTsPage: React.FC = () => {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-6 py-4 transition-all duration-200 ${activeTab === tab.id
-                  ? "border-b-2 border-purple-500 text-purple-400"
-                  : "text-muted-foreground hover:text-foreground"
-                }`}
+              className={`flex items-center gap-2 px-6 py-4 transition-all duration-200 ${
+                activeTab === tab.id ? "border-b-2 border-purple-500 text-purple-400" : "text-muted-foreground hover:text-foreground"
+              }`}
             >
               <tab.icon className="w-5 h-5" />
               {tab.label}
               <span
-                className={`px-2 py-0.5 rounded-full text-xs ${activeTab === tab.id ? "bg-purple-500/20 text-purple-300" : "bg-white/5 text-muted-foreground"
-                  }`}
+                className={`px-2 py-0.5 rounded-full text-xs ${
+                  activeTab === tab.id ? "bg-purple-500/20 text-purple-300" : "bg-white/5 text-muted-foreground"
+                }`}
               >
                 {tab.count}
               </span>
@@ -138,7 +171,17 @@ export const MyNFTsPage: React.FC = () => {
         ) : getCurrentNFTs().length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {getCurrentNFTs().map((nft) => (
-              <NFTCard key={nft.id} nft={nft} />
+              <NFTCard
+                key={nft.id}
+                nft={{
+                  ...nft,
+                  setPrice: (id, val) => setPrice({ ...price, [id]: val }),
+                  listNFT,
+                  createAuction,
+                }}
+                reload={fetchNFTs}
+                mode="wallet"
+              />
             ))}
           </div>
         ) : (

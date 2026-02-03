@@ -1,71 +1,134 @@
-import React, { useState, useMemo } from "react";
+// src/app/pages/AuctionsPage.tsx
+import React, { useEffect, useState, useMemo } from "react";
 import { NFTCard } from "../components/organisms/NFTCard";
 import { SearchBar } from "../components/molecules/SearchBar";
-import { ChevronDown, Clock } from "lucide-react";
-import { useNFTs } from "../../context/NFTContext";
+import { ChevronDown, Clock, X } from "lucide-react";
+import { getNFTContract, getMarketplaceContract } from "../../web3";
+import { ethers } from "ethers";
+
+interface AuctionNFT {
+  id: string;
+  name: string;
+  description: string;
+  image: string;
+  owner: string;
+  creator: string;
+  price: number; // start price
+  highestBid?: number;
+  highestBidder: string;
+  auctionEndTime: number;
+  category: string;
+  likes: number;
+}
 
 export const AuctionsPage: React.FC = () => {
-  const { nfts } = useNFTs();
+  const [auctionNFTs, setAuctionNFTs] = useState<AuctionNFT[]>([]);
+  const [loading, setLoading] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<
     "ending-soon" | "newly-listed" | "price-high" | "price-low"
   >("ending-soon");
 
-  // ================= AUCTION FILTER =================
-  const auctionNFTs = useMemo(() => {
-    let filtered = nfts.filter(
+  // ---------------- FETCH AUCTIONS ----------------
+  const fetchAuctions = async () => {
+    if (!window.ethereum) return;
+    setLoading(true);
+
+    try {
+      const marketplace = await getMarketplaceContract();
+      const nftContract = await getNFTContract();
+
+      const totalAuctions = Number(await marketplace.auctionCount());
+      const auctionsList: AuctionNFT[] = [];
+
+      for (let auctionId = 1; auctionId <= totalAuctions; auctionId++) {
+        try {
+          const auction = await marketplace.getAuction(auctionId);
+
+          if (auction.ended) continue; // skip ended auctions
+
+          // fetch NFT metadata
+          const tokenURI = await nftContract.tokenURI(auction.tokenId);
+          const owner = await nftContract.ownerOf(auction.tokenId);
+          const res = await fetch(tokenURI);
+          const metadata = await res.json();
+
+          auctionsList.push({
+            id: auctionId.toString(),
+            name: metadata.name ?? "Untitled NFT",
+            description: metadata.description ?? "",
+            image: metadata.image,
+            owner,
+            creator: metadata.creator ?? auction.seller,
+            price: parseFloat(ethers.formatEther(auction.startPrice)),
+            highestBid: auction.highestBid
+              ? parseFloat(ethers.formatEther(auction.highestBid))
+              : undefined,
+            highestBidder: auction.highestBidder,
+            auctionEndTime: Number(auction.endTime) * 1000,
+            category: metadata.category ?? "uncategorized",
+            likes: 0,
+          });
+        } catch (err) {
+          console.warn(`Failed to load auction #${auctionId}`, err);
+        }
+      }
+
+      setAuctionNFTs(auctionsList.reverse());
+    } catch (err) {
+      console.error("Failed to fetch auctions", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAuctions();
+  }, []);
+
+  // ---------------- FILTER + SORT ----------------
+  const filteredNFTs = useMemo(() => {
+    let filtered = auctionNFTs.filter(
       (nft) =>
-        nft.auctionEndTime &&
-        (nft.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          nft.creator.name.toLowerCase().includes(searchQuery.toLowerCase()))
+        nft.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        nft.creator.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     switch (sortBy) {
       case "ending-soon":
-        filtered.sort((a, b) => a.auctionEndTime! - b.auctionEndTime!);
+        filtered.sort((a, b) => a.auctionEndTime - b.auctionEndTime);
         break;
-
       case "newly-listed":
-        filtered.sort((a, b) => a.auctionEndTime! - b.auctionEndTime!);
+        filtered.sort((a, b) => Number(b.id) - Number(a.id));
         break;
-
       case "price-high":
         filtered.sort(
-          (a, b) =>
-            (b.highestBid ?? b.price) -
-            (a.highestBid ?? a.price)
+          (a, b) => (b.highestBid ?? b.price) - (a.highestBid ?? a.price)
         );
         break;
-
       case "price-low":
         filtered.sort(
-          (a, b) =>
-            (a.highestBid ?? a.price) -
-            (b.highestBid ?? b.price)
+          (a, b) => (a.highestBid ?? a.price) - (b.highestBid ?? b.price)
         );
         break;
     }
 
     return filtered;
-  }, [nfts, searchQuery, sortBy]);
+  }, [auctionNFTs, searchQuery, sortBy]);
 
-  // ================= STATS =================
+  // ---------------- STATS ----------------
   const totalVolume = auctionNFTs.reduce(
     (sum, nft) => sum + (nft.highestBid ?? nft.price),
     0
   );
-
   const averageBid =
-    auctionNFTs.length > 0
-      ? totalVolume / auctionNFTs.length
-      : 0;
+    auctionNFTs.length > 0 ? totalVolume / auctionNFTs.length : 0;
 
-  // ================= RENDER =================
+  // ---------------- RENDER ----------------
   return (
     <div className="min-h-screen pt-24 pb-20">
       <div className="container mx-auto px-6">
-
         {/* Header */}
         <div className="text-center mb-12">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-purple-500/10 border border-purple-500/30 mb-6">
@@ -111,52 +174,53 @@ export const AuctionsPage: React.FC = () => {
         {/* Stats */}
         <div className="grid md:grid-cols-3 gap-6 mb-12">
           <div className="p-6 rounded-2xl bg-purple-500/10 border border-purple-500/20">
-            <p className="text-sm text-muted-foreground mb-2">
-              Total Auctions
-            </p>
-            <p className="text-3xl font-bold">
-              {auctionNFTs.length}
-            </p>
+            <p className="text-sm text-muted-foreground mb-2">Total Auctions</p>
+            <p className="text-3xl font-bold">{auctionNFTs.length}</p>
           </div>
 
           <div className="p-6 rounded-2xl bg-cyan-500/10 border border-cyan-500/20">
-            <p className="text-sm text-muted-foreground mb-2">
-              Total Volume
-            </p>
+            <p className="text-sm text-muted-foreground mb-2">Total Volume</p>
             <p className="text-3xl font-bold">
               {totalVolume.toFixed(2)}
-              <span className="text-lg text-cyan-400 ml-2">
-                ETH
-              </span>
+              <span className="text-lg text-cyan-400 ml-2">ETH</span>
             </p>
           </div>
 
           <div className="p-6 rounded-2xl bg-blue-500/10 border border-blue-500/20">
-            <p className="text-sm text-muted-foreground mb-2">
-              Average Bid
-            </p>
+            <p className="text-sm text-muted-foreground mb-2">Average Bid</p>
             <p className="text-3xl font-bold">
               {averageBid.toFixed(2)}
-              <span className="text-lg text-blue-400 ml-2">
-                ETH
-              </span>
+              <span className="text-lg text-blue-400 ml-2">ETH</span>
             </p>
           </div>
         </div>
 
         {/* Grid */}
-        {auctionNFTs.length > 0 ? (
+        {loading ? (
+          <p className="text-center text-muted-foreground">
+            Loading auctions...
+          </p>
+        ) : filteredNFTs.length > 0 ? (
           <div className="grid md:grid-cols-4 gap-6">
-            {auctionNFTs.map((nft) => (
-              <NFTCard key={nft.id} nft={nft} />
+            {filteredNFTs.map((nft) => (
+              <NFTCard
+                key={nft.id}
+                nft={{
+                  ...nft,
+                  auctionEndTime: nft.auctionEndTime,
+                  highestBid: nft.highestBid,
+                  highestBidder: nft.highestBidder,
+
+                }}
+                reload={fetchAuctions}
+              />
+
             ))}
           </div>
         ) : (
           <div className="text-center py-20">
-            <Clock className="w-12 h-12 mx-auto text-purple-400 mb-4" />
-            <h3 className="text-2xl font-semibold">
-              No Auctions Found
-            </h3>
+            <X className="w-12 h-12 mx-auto text-purple-400 mb-4" />
+            <h3 className="text-2xl font-semibold">No Auctions Found</h3>
             <p className="text-muted-foreground mt-2">
               {searchQuery
                 ? "Try adjusting your search"
@@ -164,7 +228,6 @@ export const AuctionsPage: React.FC = () => {
             </p>
           </div>
         )}
-
       </div>
     </div>
   );

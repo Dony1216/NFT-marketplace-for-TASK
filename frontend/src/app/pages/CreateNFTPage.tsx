@@ -162,7 +162,7 @@ export const CreateNFTPage: React.FC = () => {
   }
 
   /* ---------------- CREATE NFT ---------------- */
-  console.log(formData.category)
+
   async function createNFT() {
     if (!canMint) {
       alert(`⏳ Cooldown active. Please wait ${formatTime(cooldownLeft)}.`);

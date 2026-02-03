@@ -3,14 +3,16 @@ import React, { useEffect, useState } from "react";
 import { NFTCard } from "../components/organisms/NFTCard";
 import { SearchBar } from "../components/molecules/SearchBar";
 import { ChevronDown, Grid3x3, LayoutGrid } from "lucide-react";
-import { getNFTContract } from "../../web3";
+import { getNFTContract, getMarketplaceContract } from "../../web3";
+import { NFT_ADDRESS, MARKETPLACE_ADDRESS } from "../../constants";
+import { ethers } from "ethers";
 
 interface NFT {
   id: string;
   name: string;
   description: string;
   image: string;
-  price: number;
+  price: number; // updated price from Marketplace
   likes: number;
   creator: string;
   owner: string;
@@ -20,15 +22,9 @@ interface NFT {
 export const AllNFTsPage: React.FC = () => {
   const [nfts, setNFTs] = useState<NFT[]>([]);
   const [loading, setLoading] = useState(false);
-  
-
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortBy, setSortBy] = useState<
-    "recent" | "price-low" | "price-high" | "popular"
-  >("recent");
+  const [sortBy, setSortBy] = useState<"recent" | "price-low" | "price-high" | "popular">("recent");
   const [gridCols, setGridCols] = useState<3 | 4>(4);
-
-  /* ---------------- FETCH ALL NFTs FROM CHAIN ---------------- */
 
   const fetchAllNFTs = async () => {
     if (!window.ethereum) return;
@@ -36,8 +32,8 @@ export const AllNFTsPage: React.FC = () => {
 
     try {
       const nftContract = await getNFTContract();
+      const marketplace = await getMarketplaceContract();
       const totalSupply = Number(await nftContract.tokenCount());
-
       const items: NFT[] = [];
 
       for (let tokenId = 1; tokenId <= totalSupply; tokenId++) {
@@ -48,13 +44,30 @@ export const AllNFTsPage: React.FC = () => {
           const res = await fetch(tokenURI);
           const metadata = await res.json();
 
+          let price = 0;
+
+          // Try fetching live price from Marketplace
+          try {
+            const listingIndex = await marketplace.listingIndex(NFT_ADDRESS, tokenId);
+            const allListings = await marketplace.getAllListings();
+            if (Number(listingIndex) < allListings.length) {
+              const currentListing = allListings[Number(listingIndex)];
+              if (currentListing && currentListing.price) {
+                price = Number(ethers.formatEther(currentListing.price));
+              }
+            }
+            console.log(price)
+          } catch (err) {
+            console.log(`NFT #${tokenId} not listed or marketplace error`, err);
+          }
+
           items.push({
             id: tokenId.toString(),
             name: metadata.name ?? "Untitled NFT",
             description: metadata.description ?? "",
             image: metadata.image,
             owner,
-            price: metadata.price ?? 0,
+            price,
             category: metadata.category ?? "uncategorized",
             likes: 0,
             creator: metadata.creator ?? owner,
@@ -76,8 +89,6 @@ export const AllNFTsPage: React.FC = () => {
     fetchAllNFTs();
   }, []);
 
-  /* ---------------- FILTER + SORT ---------------- */
-
   const filteredNFTs = nfts
     .filter(
       (nft) =>
@@ -96,8 +107,6 @@ export const AllNFTsPage: React.FC = () => {
           return 0;
       }
     });
-
-  /* ---------------- RENDER ---------------- */
 
   return (
     <div className="min-h-screen pt-24 pb-20">
@@ -120,9 +129,7 @@ export const AllNFTsPage: React.FC = () => {
               onChange={setSearchQuery}
               placeholder="Search by name or creator..."
             />
-
             <div className="flex gap-4 items-center">
-              {/* Sort */}
               <div className="relative">
                 <select
                   value={sortBy}
@@ -136,26 +143,16 @@ export const AllNFTsPage: React.FC = () => {
                 </select>
                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5" />
               </div>
-
-              {/* Grid Toggle */}
               <div className="flex gap-2 p-1 rounded-lg bg-white/5 border border-purple-500/20">
                 <button
                   onClick={() => setGridCols(3)}
-                  className={`p-2 rounded ${
-                    gridCols === 3
-                      ? "bg-purple-500/20 text-purple-300"
-                      : "text-muted-foreground"
-                  }`}
+                  className={`p-2 rounded ${gridCols === 3 ? "bg-purple-500/20 text-purple-300" : "text-muted-foreground"}`}
                 >
                   <Grid3x3 className="w-5 h-5" />
                 </button>
                 <button
                   onClick={() => setGridCols(4)}
-                  className={`p-2 rounded ${
-                    gridCols === 4
-                      ? "bg-purple-500/20 text-purple-300"
-                      : "text-muted-foreground"
-                  }`}
+                  className={`p-2 rounded ${gridCols === 4 ? "bg-purple-500/20 text-purple-300" : "text-muted-foreground"}`}
                 >
                   <LayoutGrid className="w-5 h-5" />
                 </button>
@@ -171,11 +168,7 @@ export const AllNFTsPage: React.FC = () => {
           </p>
         ) : filteredNFTs.length > 0 ? (
           <div
-            className={`grid gap-6 ${
-              gridCols === 3
-                ? "grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
-                : "grid-cols-1 md:grid-cols-2 lg:grid-cols-4"
-            }`}
+            className={`grid gap-6 ${gridCols === 3 ? "grid-cols-1 md:grid-cols-2 lg:grid-cols-3" : "grid-cols-1 md:grid-cols-2 lg:grid-cols-4"}`}
           >
             {filteredNFTs.map((nft) => (
               <NFTCard key={nft.id} nft={nft} />
@@ -185,9 +178,7 @@ export const AllNFTsPage: React.FC = () => {
           <div className="text-center py-20">
             <LayoutGrid className="w-12 h-12 mx-auto text-purple-400 mb-4" />
             <h3 className="text-2xl font-semibold">No NFTs Found</h3>
-            <p className="text-muted-foreground">
-              Try adjusting your search
-            </p>
+            <p className="text-muted-foreground">Try adjusting your search</p>
           </div>
         )}
       </div>
